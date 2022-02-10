@@ -5,7 +5,10 @@ import os
 import pickle
 import random
 import re
+import shutil
 from typing import Any, Dict, List, Optional, Set, Tuple
+import logging
+import wandb
 
 import numpy as np      # type: ignore
 import jsonlines        # type: ignore
@@ -26,7 +29,9 @@ from coref.span_predictor import SpanPredictor
 from coref.tokenizer_customization import TOKENIZER_FILTERS, TOKENIZER_MAPS
 from coref.utils import GraphNode
 from coref.word_encoder import WordEncoder
+from coref.metrics import MentionEvaluator
 
+logger = logging.getLogger(__name__)
 
 class CorefModel:  # pylint: disable=too-many-instance-attributes
     """Combines all coref modules together to find coreferent spans.
@@ -49,6 +54,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         sp (SpanPredictor)
     """
     def __init__(self,
+                 args,
                  config_path: str,
                  section: str,
                  epochs_trained: int = 0):
@@ -61,7 +67,11 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             epochs_trained (int): the number of epochs finished
                 (useful for warm start)
         """
+        self.args = args
+        self.device = args.device
         self.config = CorefModel._load_config(config_path, section)
+        self.config.weight_dir = os.path.join(self.config.weight_dir, \
+            datetime.now().strftime(f"%m_%d_%Y_%H_%M_%S")+'_'+args.run_name)
         self.epochs_trained = epochs_trained
         self._docs: Dict[str, List[Doc]] = {}
         self._build_model()
@@ -84,7 +94,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
     # ========================================================== Public methods
 
     @torch.no_grad()
-    def evaluate(self,
+    def evaluate(self, docs,
                  data_split: str = "dev",
                  word_level_conll: bool = False
                  ) -> Tuple[float, Tuple[float, float, float]]:
@@ -99,64 +109,72 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             span-level LEA: f1, precision, recal
         """
         self.training = False
+        # cluster_train_evaluator = CorefEvaluator()
+        # mention_train_evaluator = MentionEvaluator()
+        # men_propos_train_evaluator = MentionEvaluator()
         w_checker = ClusterChecker()
         s_checker = ClusterChecker()
-        docs = self._get_docs(self.config.__dict__[f"{data_split}_data"])
+        men_prop_evaluator = MentionEvaluator()
         running_loss = 0.0
         s_correct = 0
         s_total = 0
 
-        with conll.open_(self.config, self.epochs_trained, data_split) \
-                as (gold_f, pred_f):
-            pbar = tqdm(docs, unit="docs", ncols=0)
-            for doc in pbar:
-                res = self.run(doc)
+        # with conll.open_(self.config, self.epochs_trained, data_split) \
+        #         as (gold_f, pred_f):
+        pbar = tqdm(docs, unit="docs", ncols=0)
+        for doc in pbar:
+            res = self.run(doc)
 
-                running_loss += self._coref_criterion(res.coref_scores, res.coref_y).item()
+            running_loss += self._coref_criterion(res.coref_scores, res.coref_y).item()
 
-                if res.span_y:
-                    pred_starts = res.span_scores[:, :, 0].argmax(dim=1)
-                    pred_ends = res.span_scores[:, :, 1].argmax(dim=1)
-                    s_correct += ((res.span_y[0] == pred_starts) * (res.span_y[1] == pred_ends)).sum().item()
-                    s_total += len(pred_starts)
+            if res.span_y:
+                pred_starts = res.span_scores[:, :, 0].argmax(dim=1)
+                pred_ends = res.span_scores[:, :, 1].argmax(dim=1)
+                # men propos scores
+                men_prop_evaluator.update([(pred_starts[i].item(), pred_ends[i].item()) for i in range(len(pred_starts))], \
+                    [(res.span_y[0][i].item(), res.span_y[1][i].item()) for i in range(len(res.span_y[0]))])
+                s_correct += ((res.span_y[0] == pred_starts) * (res.span_y[1] == pred_ends)).sum().item()
+                s_total += len(pred_starts)
 
-                if word_level_conll:
-                    conll.write_conll(doc,
-                                      [[(i, i + 1) for i in cluster]
-                                       for cluster in doc["word_clusters"]],
-                                      gold_f)
-                    conll.write_conll(doc,
-                                      [[(i, i + 1) for i in cluster]
-                                       for cluster in res.word_clusters],
-                                      pred_f)
-                else:
-                    conll.write_conll(doc, doc["span_clusters"], gold_f)
-                    conll.write_conll(doc, res.span_clusters, pred_f)
+            # if word_level_conll:
+            #     conll.write_conll(doc,
+            #                         [[(i, i + 1) for i in cluster]
+            #                         for cluster in doc["word_clusters"]],
+            #                         gold_f)
+            #     conll.write_conll(doc,
+            #                         [[(i, i + 1) for i in cluster]
+            #                         for cluster in res.word_clusters],
+            #                         pred_f)
+            # else:
+            #     conll.write_conll(doc, doc["span_clusters"], gold_f)
+            #     conll.write_conll(doc, res.span_clusters, pred_f)
 
-                w_checker.add_predictions(doc["word_clusters"], res.word_clusters)
-                w_lea = w_checker.total_lea
+            # mentions scored
+            w_checker.add_predictions(doc["word_clusters"], res.word_clusters)
+            w_lea = w_checker.total_lea
 
-                s_checker.add_predictions(doc["span_clusters"], res.span_clusters)
-                s_lea = s_checker.total_lea
+            # final scores
+            s_checker.add_predictions(doc["span_clusters"], res.span_clusters)
+            s_lea = s_checker.total_lea
 
-                del res
+            del res
 
-                pbar.set_description(
-                    f"{data_split}:"
-                    f" | WL: "
-                    f" loss: {running_loss / (pbar.n + 1):<.5f},"
-                    f" f1: {w_lea[0]:.5f},"
-                    f" p: {w_lea[1]:.5f},"
-                    f" r: {w_lea[2]:<.5f}"
-                    f" | SL: "
-                    f" sa: {s_correct / s_total:<.5f},"
-                    f" f1: {s_lea[0]:.5f},"
-                    f" p: {s_lea[1]:.5f},"
-                    f" r: {s_lea[2]:<.5f}"
-                )
-            print()
+            pbar.set_description(
+                f"{data_split}:"
+                f" | WL: "
+                f" loss: {running_loss / (pbar.n + 1):<.5f},"
+                f" f1: {w_lea[0]:.5f},"
+                f" p: {w_lea[1]:.5f},"
+                f" r: {w_lea[2]:<.5f}"
+                f" | SL: "
+                f" sa: {s_correct / s_total:<.5f},"
+                f" f1: {s_lea[0]:.5f},"
+                f" p: {s_lea[1]:.5f},"
+                f" r: {s_lea[2]:<.5f}"
+            )
+        print()
 
-        return (running_loss / len(docs), *s_checker.total_lea)
+        return (running_loss / len(docs), s_checker, w_checker, men_prop_evaluator)
 
     def load_weights(self,
                      path: Optional[str] = None,
@@ -166,13 +184,13 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         """
         Loads pretrained weights of modules saved in a file located at path.
         If path is None, the last saved model with current configuration
-        in data_dir is loaded.
+        in weight_dir is loaded.
         Assumes files are named like {configuration}_(e{epoch}_{time})*.pt.
         """
         if path is None:
             pattern = rf"{self.config.section}_\(e(\d+)_[^()]*\).*\.pt"
             files = []
-            for f in os.listdir(self.config.data_dir):
+            for f in os.listdir(self.config.weight_dir):
                 match_obj = re.match(pattern, f)
                 if match_obj:
                     files.append((int(match_obj.group(1)), f))
@@ -180,12 +198,12 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 if noexception:
                     print("No weights have been loaded", flush=True)
                     return
-                raise OSError(f"No weights found in {self.config.data_dir}!")
+                raise OSError(f"No weights found in {self.config.weight_dir}!")
             _, path = sorted(files)[-1]
-            path = os.path.join(self.config.data_dir, path)
+            path = os.path.join(self.config.weight_dir, path)
 
         if map_location is None:
-            map_location = self.config.device
+            map_location = self.device
         print(f"Loading from {path}...")
         state_dicts = torch.load(path, map_location=map_location)
         self.epochs_trained = state_dicts.pop("epochs_trained", 0)
@@ -266,10 +284,9 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         to_save.extend(self.optimizers.items())
         to_save.extend(self.schedulers.items())
 
-        time = datetime.strftime(datetime.now(), "%Y.%m.%d_%H.%M")
-        path = os.path.join(self.config.data_dir,
+        path = os.path.join(self.config.weight_dir,
                             f"{self.config.section}"
-                            f"_(e{self.epochs_trained}_{time}).pt")
+                            f"_e{self.epochs_trained}.pt")
         savedict = {name: module.state_dict() for name, module in to_save}
         savedict["epochs_trained"] = self.epochs_trained  # type: ignore
         torch.save(savedict, path)
@@ -278,10 +295,18 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         """
         Trains all the trainable blocks in the model using the config provided.
         """
-        docs = list(self._get_docs(self.config.train_data))
-        docs_ids = list(range(len(docs)))
-        avg_spans = sum(len(doc["head2span"]) for doc in docs) / len(docs)
+        logger.info("Training/evaluation parameters %s", self.args)
+        train_docs = list(self._get_docs(self.config.train_data))
+        eval_docs = self._get_docs(self.config.__dict__[f"dev_data"])
+        docs_ids = list(range(len(train_docs)))
+        avg_spans = sum(len(doc["head2span"]) for doc in train_docs) / len(train_docs)
 
+        best_f1 = -1
+        best_f1_global_step = -1
+        last_saved_global_step = -1
+        global_step = 0
+        recent_losses = []
+        recent_losses_parts = {}
         for epoch in range(self.epochs_trained, self.config.train_epochs):
             self.training = True
             running_c_loss = 0.0
@@ -289,7 +314,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             random.shuffle(docs_ids)
             pbar = tqdm(docs_ids, unit="docs", ncols=0)
             for doc_id in pbar:
-                doc = docs[doc_id]
+                doc = train_docs[doc_id]
 
                 for optim in self.optimizers.values():
                     optim.zero_grad()
@@ -306,6 +331,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 del res
 
                 (c_loss + s_loss).backward()
+                recent_losses.append((c_loss + s_loss).item())
                 running_c_loss += c_loss.item()
                 running_s_loss += s_loss.item()
 
@@ -322,10 +348,101 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                     f" c_loss: {running_c_loss / (pbar.n + 1):<.5f}"
                     f" s_loss: {running_s_loss / (pbar.n + 1):<.5f}"
                 )
+                if global_step % 50 == 0:
+                    if not self.args.is_debug:
+                        dict_to_log = {}
+                        dict_to_log['lr'] = self.optimizers["general_optimizer"].param_groups[0]['lr']
+                        dict_to_log['lr_bert'] = self.optimizers["bert_optimizer"].param_groups[0]['lr']
+                        dict_to_log['loss'] = np.mean(recent_losses)
+                        # for key in recent_losses_parts.keys():
+                        #     dict_to_log[key] = np.mean(recent_losses_parts[key])
+                        wandb.log(dict_to_log, step=global_step)
+                    recent_losses.clear()
+                    # recent_losses_parts.clear()
+                
+                global_step += 1
 
+            logger.info("***** Running evaluation {} *****".format(str(self.epochs_trained)))
+            eval_loss, eval_span_checker, eval_word_checker, eval_men_prop_evaluator = \
+                self.evaluate(eval_docs)
+            eval_f1, eval_p, eval_r = eval_span_checker.total_lea
+            eval_f1m, eval_pm, eval_rm = eval_word_checker.total_lea
+            eval_f1mp, eval_pmp, eval_rmp = eval_men_prop_evaluator.get_prf()
+            if eval_f1 > best_f1:
+                prev_best_f1 = best_f1
+                prev_best_f1_global_step = best_f1_global_step
+                self.save_weights()
+                print(f'previous checkpoint with f1 {prev_best_f1} was {prev_best_f1_global_step}')
+                best_f1 = eval_f1
+                best_f1_global_step = global_step
+                print(f'saved checkpoint with f1 {best_f1} in step {best_f1_global_step} to {output_dir}')
+                path_to_remove = os.path.join(self.config.weight_dir,
+                                    f"{self.config.section}"
+                                    f"_e{prev_best_f1_global_step}.pt")
+                if prev_best_f1_global_step > -1 and os.path.exists(path_to_remove):
+                    shutil.rmtree(path_to_remove)
+                    print(f'removed checkpoint with f1 {prev_best_f1} from {path_to_remove}')
+                else:
+                    self.save_weights()
+                    print(f'saved checkpoint in global_step {global_step}')
+                    path_to_remove = os.path.join(self.config.weight_dir,
+                                        f"{self.config.section}"
+                                        f"_e{last_saved_global_step}.pt")
+                    if last_saved_global_step > -1 and last_saved_global_step != best_f1_global_step and os.path.exists(path_to_remove):
+                        shutil.rmtree(path_to_remove)
+                        print(f'removed previous checkpoint in global_step {last_saved_global_step}')
+                    last_saved_global_step = global_step
+                if not self.args.is_debug:
+                    wandb.log({'eval_best_f1':best_f1}, step=global_step)
+                    try:
+                        wandb.log({'eval_best_f1_checkpoint':\
+                            os.path.join(self.config.weight_dir,
+                                    f"{self.config.section}"
+                                    f"_e{best_f1_global_step}.pt")}, step=global_step)
+                    except:
+                        pass
+            eval_results = {'loss': eval_loss,
+                    'avg_f1': eval_f1,
+                    'coref_threshold': best_coref_threshold, 
+                    'cluster_threshold': best_cluster_threshold,
+                    'precision': eval_p,
+                    'recall': eval_r,  
+                    'mentions_avg_f1': eval_f1m,
+                    'mentions_precision': eval_pm,
+                    'mentions_recall': eval_rm,  
+                    'mention_proposals_avg_f1': eval_f1mp,
+                    'mention_proposals_precision': eval_pmp,
+                    'mention_proposals_recall': eval_rmp}
+            logger.info("***** Eval results {} *****".format(str(self.epochs_trained)))
+            dict_to_log = {}
+            for key, value in eval_results.items():
+                dict_to_log['eval_{}'.format(key)] = value
+                logger.info("eval %s = %s" % (key, str(eval_results[key])))
+            if not self.args.is_debug:
+                wandb.log(dict_to_log, step=global_step)
+
+            if self.epochs_trained % 3 == 0:
+                logger.info("***** Running Train evaluation {} *****".format(str(self.epochs_trained)))
+                _, train_span_checker, train_word_checker, train_men_prop_evaluator = \
+                    self.evaluate(train_docs, data_split='train')
+                train_f1, train_p, train_r = train_span_checker.total_lea
+                train_f1m, train_pm, train_rm = train_word_checker.total_lea
+                train_f1mp, train_pmp, train_rmp = train_men_prop_evaluator.get_prf()
+                dict_to_log = {}
+                dict_to_log['Train Precision'] = train_p
+                dict_to_log['Train Recall'] = train_r
+                dict_to_log['Train F1'] = train_f1
+                dict_to_log['Train Mention Precision'] = train_pm
+                dict_to_log['Train Mention Recall'] = train_rm
+                dict_to_log['Train Mention F1'] = train_f1m
+                dict_to_log['Train MentionProposal Precision'] = train_pmp
+                dict_to_log['Train MentionProposal Recall'] = train_rmp
+                dict_to_log['Train MentionProposal F1'] = train_f1mp
+                if not self.args.is_debug:
+                    wandb.log(dict_to_log, step=global_step)
+                logger.info('Train f1, precision, recall: {}, Mentions f1, precision, recall: {}, Mention Proposals f1, precision, recall: {}'.format(\
+                    (train_f1, train_p, train_r), (train_f1m, train_pm, train_rm), (train_f1mp, train_pmp, train_rmp)))
             self.epochs_trained += 1
-            self.save_weights()
-            self.evaluate()
 
     # ========================================================= Private methods
 
@@ -339,33 +456,33 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         subword_mask = ~(np.isin(subwords_batches, special_tokens))
 
         subwords_batches_tensor = torch.tensor(subwords_batches,
-                                               device=self.config.device,
+                                               device=self.device,
                                                dtype=torch.long)
         subword_mask_tensor = torch.tensor(subword_mask,
-                                           device=self.config.device)
+                                           device=self.device)
 
         # Obtain bert output for selected batches only
         attention_mask = (subwords_batches != self.tokenizer.pad_token_id)
         out = self.bert(
             subwords_batches_tensor,
             attention_mask=torch.tensor(
-                attention_mask, device=self.config.device))[0]
+                attention_mask, device=self.device))[0]
 
         # [n_subwords, bert_emb]
         return out[subword_mask_tensor]
 
     def _build_model(self):
-        self.bert, self.tokenizer = bert.load_bert(self.config)
-        self.pw = PairwiseEncoder(self.config).to(self.config.device)
+        self.bert, self.tokenizer = bert.load_bert(self.config, self.device)
+        self.pw = PairwiseEncoder(self.config).to(self.device)
 
         bert_emb = self.bert.config.hidden_size
         pair_emb = bert_emb * 3 + self.pw.shape
 
         # pylint: disable=line-too-long
-        self.a_scorer = AnaphoricityScorer(pair_emb, self.config).to(self.config.device)
-        self.we = WordEncoder(bert_emb, self.config).to(self.config.device)
-        self.rough_scorer = RoughScorer(bert_emb, self.config).to(self.config.device)
-        self.sp = SpanPredictor(bert_emb, self.config.sp_embedding_size).to(self.config.device)
+        self.a_scorer = AnaphoricityScorer(pair_emb, self.config).to(self.device)
+        self.we = WordEncoder(bert_emb, self.config).to(self.device)
+        self.rough_scorer = RoughScorer(bert_emb, self.config).to(self.device)
+        self.sp = SpanPredictor(bert_emb, self.config.sp_embedding_size).to(self.device)
 
         self.trainable: Dict[str, torch.nn.Module] = {
             "bert": self.bert, "we": self.we,

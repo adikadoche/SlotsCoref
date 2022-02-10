@@ -9,12 +9,17 @@ import datetime
 import random
 import sys
 import time
+import logging
+import os
+import wandb 
 
 import numpy as np  # type: ignore
 import torch        # type: ignore
 
 from coref import CorefModel
+from cli import parse_args
 
+logger = logging.getLogger(__name__)
 
 @contextmanager
 def output_running_time():
@@ -39,41 +44,66 @@ def seed(value: int) -> None:
 
 
 if __name__ == "__main__":
-    argparser = argparse.ArgumentParser()
-    argparser.add_argument("mode", choices=("train", "eval"))
-    argparser.add_argument("experiment")
-    argparser.add_argument("--config-file", default="config.toml")
-    argparser.add_argument("--data-split", choices=("train", "dev", "test"),
-                           default="test",
-                           help="Data split to be used for evaluation."
-                                " Defaults to 'test'."
-                                " Ignored in 'train' mode.")
-    argparser.add_argument("--batch-size", type=int,
-                           help="Adjust to override the config value if you're"
-                                " experiencing out-of-memory issues")
-    argparser.add_argument("--warm-start", action="store_true",
-                           help="If set, the training will resume from the"
-                                " last checkpoint saved if any. Ignored in"
-                                " evaluation modes."
-                                " Incompatible with '--weights'.")
-    argparser.add_argument("--weights",
-                           help="Path to file with weights to load."
-                                " If not supplied, in 'eval' mode the latest"
-                                " weights of the experiment will be loaded;"
-                                " in 'train' mode no weights will be loaded.")
-    argparser.add_argument("--word-level", action="store_true",
-                           help="If set, output word-level conll-formatted"
-                                " files in evaluation modes. Ignored in"
-                                " 'train' mode.")
-    args = argparser.parse_args()
 
+    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+    #wandb
+    #coref color print
+    #adamw
+    #slots params
+    #slots algo
+    #more loss terms
+    args = parse_args()
     if args.warm_start and args.weights is not None:
         print("The following options are incompatible:"
               " '--warm_start' and '--weights'", file=sys.stderr)
         sys.exit(1)
 
+    if "JOB_NAME" in os.environ:
+        args.run_name = os.environ["JOB_NAME"]
+    else:
+        args.run_name = 'vscode'
+
+    transformers_logger = logging.getLogger("transformers")
+    transformers_logger.setLevel(logging.ERROR)
+    if not args.is_debug:
+        wandb.init(project='coref-detr', entity='adizicher', name=args.run_name)
+
+    if args.is_debug:
+        vis_devices="5"
+        if args.no_cuda:
+            args.n_gpu = 0
+        else:
+            args.n_gpu = len(vis_devices.split(','))
+            os.environ["CUDA_VISIBLE_DEVICES"] = vis_devices
+            os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+    device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
+    args.n_gpu = 1 if not args.no_cuda else 0
+    args.device = device
+    if args.is_debug:
+        if args.no_cuda:
+            args.n_gpu = 0
+        else:
+            args.n_gpu = len(vis_devices.split(','))
+            os.environ["CUDA_VISIBLE_DEVICES"] = vis_devices
+            os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+
+    # Setup logging
+    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                        datefmt='%m/%d/%Y %H:%M:%S',
+                        level=logging.INFO if args.local_rank in [-1, 0] else logging.WARN)
+    if not args.is_debug:    
+        wb_config = wandb.config
+        for key, val in vars(args).items():
+            logger.info(f"{key} - {val}")
+            wb_config[key] = val
+        if "GIT_HASH" in os.environ:
+            wb_config["GIT_HASH"] = os.environ["GIT_HASH"]
+    else:
+        for key, val in vars(args).items():
+            logger.info(f"{key} - {val}")
+
     seed(2020)
-    model = CorefModel(args.config_file, args.experiment)
+    model = CorefModel(args, args.config_file, args.experiment)
 
     if args.batch_size:
         model.config.a_scoring_batch_size = args.batch_size

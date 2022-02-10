@@ -12,13 +12,11 @@ class Config:  # pylint: disable=too-many-instance-attributes, too-few-public-me
     """ Contains values needed to set up the coreference model. """
     section: str
 
-    data_dir: str
+    weight_dir: str
 
     train_data: str
     dev_data: str
     test_data: str
-
-    device: str
 
     bert_model: str
     bert_window_size: int

@@ -12,6 +12,7 @@
             "console": "integratedTerminal",
             "args":[
                 "train", "roberta",
+                // "--is_debug"
             ]
         }
     ]

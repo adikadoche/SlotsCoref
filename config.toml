@@ -5,16 +5,12 @@
 [DEFAULT]
 
 # The directory that contains extracted files of everything you've downloaded.
-data_dir = "data"
+weight_dir = "/home/gamir/adiz/Code/runs/wl-coref/weights"
 
 # Train, dev and test jsonlines
-train_data = "data/english_train_head.jsonlines"
-dev_data = "data/english_dev_head.jsonlines"
-test_data = "data/english_test_head.jsonlines"
-
-# The device where everything is to be placed. "cuda:N"/"cpu" are supported.
-device = "cuda:0"
-
+train_data = "/home/gamir/adiz/datasets/wl-ontonotes/english_train_head.jsonlines"
+dev_data = "/home/gamir/adiz/datasets/wl-ontonotes/english_dev_head.jsonlines"
+test_data = "/home/gamir/adiz/datasets/wl-ontonotes/english_test_head.jsonlines"
 
 # Bert settings ======================
 
@@ -80,7 +76,7 @@ train_epochs = 20
 bce_loss_weight = 0.5
 
 # The directory that will contain conll prediction files
-conll_log_dir = "data/conll_logs"
+conll_log_dir = "/home/gamir/adiz/datasets/wl-ontonotes/conll_logs"
 
 # =============================================================================
 # Extra keyword arguments to be passed to bert tokenizers of specified models
@@ -122,7 +118,6 @@ bert_window_size = 2048
 [debug]
 bert_window_size = 384
 bert_finetune = false
-device = "cpu:0"
 
 [debug_gpu]
 bert_window_size = 384

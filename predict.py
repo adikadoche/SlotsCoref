@@ -53,7 +53,7 @@ if __name__ == "__main__":
                                 " if there aren't any, an error is raised.")
     args = argparser.parse_args()
 
-    model = CorefModel(args.config_file, args.experiment)
+    model = CorefModel(args.device, args.config_file, args.experiment)
 
     if args.batch_size:
         model.config.a_scoring_batch_size = args.batch_size
