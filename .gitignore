@@ -1,0 +1,9 @@
+.idea
+venv
+**/*.pyc
+*.txt
+slurm_logs
+wandb/*
+coref-detr/*
+*.pkl
+*.ipynb
