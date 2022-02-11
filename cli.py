@@ -30,6 +30,7 @@ def parse_args():
                                 " 'train' mode.")
 
 
+    argparser.add_argument('--max_eval_print', type=int, default=5)
     argparser.add_argument("--is_debug", action="store_true", help="Whether to run profiling.")
     argparser.add_argument("--no_cuda", action="store_true", help="Whether not to use CUDA when available")
     argparser.add_argument("--local_rank", type=int, default=-1, help="local_rank for distributed training on gpus")

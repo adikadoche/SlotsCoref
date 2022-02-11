@@ -9,6 +9,15 @@ import torch
 EPSILON = 1e-7
 LARGE_VALUE = 1000  # used instead of inf due to bug #16762 in pytorch
 
+PRONOUNS = {'i', 'me', 'my', 'mine', 'myself',
+            'we', 'us', 'our', 'ours', 'ourselves',
+            'you', 'your', 'yours', 'yourself', 'yourselves',
+            'he', 'him', 'his', 'himself',
+            'she', 'her', 'hers', 'herself',
+            'it', 'its', 'itself',
+            'they', 'them', 'their', 'theirs', 'themself', 'themselves',
+            'this', 'these', 'that', 'those'}
+
 Doc = Dict[str, Any]
 Span = Tuple[int, int]
 

@@ -30,6 +30,7 @@ from coref.tokenizer_customization import TOKENIZER_FILTERS, TOKENIZER_MAPS
 from coref.utils import GraphNode
 from coref.word_encoder import WordEncoder
 from coref.metrics import MentionEvaluator
+from coref.coref_analysis import print_predictions
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,10 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         s_correct = 0
         s_total = 0
 
+        all_gold_clusters = []
+        all_predicted_clusters = []
+        all_tokens = []
+
         # with conll.open_(self.config, self.epochs_trained, data_split) \
         #         as (gold_f, pred_f):
         pbar = tqdm(docs, unit="docs", ncols=0)
@@ -157,6 +162,10 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             s_checker.add_predictions(doc["span_clusters"], res.span_clusters)
             s_lea = s_checker.total_lea
 
+            all_predicted_clusters.append(res.span_clusters)
+            all_gold_clusters.append(doc["span_clusters"])
+            all_tokens.append(doc["cased_words"])
+
             del res
 
             pbar.set_description(
@@ -173,6 +182,9 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 f" r: {s_lea[2]:<.5f}"
             )
         print()
+
+        print("============ {data_split} EXAMPLES ============")
+        print_predictions(all_gold_clusters, all_predicted_clusters, all_tokens, self.args.max_eval_print)
 
         return (running_loss / len(docs), s_checker, w_checker, men_prop_evaluator)
 
@@ -375,7 +387,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 print(f'previous checkpoint with f1 {prev_best_f1} was {prev_best_f1_global_step}')
                 best_f1 = eval_f1
                 best_f1_global_step = global_step
-                print(f'saved checkpoint with f1 {best_f1} in step {best_f1_global_step} to {output_dir}')
+                print(f'saved checkpoint with f1 {best_f1} in step {best_f1_global_step} to {self.config.weight_dir}')
                 path_to_remove = os.path.join(self.config.weight_dir,
                                     f"{self.config.section}"
                                     f"_e{prev_best_f1_global_step}.pt")
@@ -403,8 +415,6 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                         pass
             eval_results = {'loss': eval_loss,
                     'avg_f1': eval_f1,
-                    'coref_threshold': best_coref_threshold, 
-                    'cluster_threshold': best_cluster_threshold,
                     'precision': eval_p,
                     'recall': eval_r,  
                     'mentions_avg_f1': eval_f1m,
