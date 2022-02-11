@@ -45,13 +45,14 @@ def seed(value: int) -> None:
 
 if __name__ == "__main__":
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     #wandb
     #coref color print
     #adamw
     #slots params
     #slots algo
     #more loss terms
+    #self attn?
     args = parse_args()
     if args.warm_start and args.weights is not None:
         print("The following options are incompatible:"

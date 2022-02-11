@@ -73,6 +73,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         self.config = CorefModel._load_config(config_path, section)
         self.config.weight_dir = os.path.join(self.config.weight_dir, \
             datetime.now().strftime(f"%m_%d_%Y_%H_%M_%S")+'_'+args.run_name)
+        if not os.path.exists(self.config.weight_dir):
+            os.makedirs(self.config.weight_dir)
         self.epochs_trained = epochs_trained
         self._docs: Dict[str, List[Doc]] = {}
         self._build_model()
