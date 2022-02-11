@@ -47,8 +47,8 @@ if __name__ == "__main__":
 
     # os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     #wandb
-    #coref color print
     #adamw
+    #loadingmodel
     #slots params
     #slots algo
     #more loss terms

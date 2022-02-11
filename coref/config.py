@@ -12,7 +12,8 @@ class Config:  # pylint: disable=too-many-instance-attributes, too-few-public-me
     """ Contains values needed to set up the coreference model. """
     section: str
 
-    weight_dir: str
+    output_dir: str
+    cache_dir: str
 
     train_data: str
     dev_data: str
@@ -33,9 +34,9 @@ class Config:  # pylint: disable=too-many-instance-attributes, too-few-public-me
 
     bert_finetune: bool
     dropout_rate: float
-    learning_rate: float
-    bert_learning_rate: float
-    train_epochs: int
+    lr: float
+    lr_backbone: float
+    num_train_epochs: int
     bce_loss_weight: float
 
     tokenizer_kwargs: Dict[str, dict]

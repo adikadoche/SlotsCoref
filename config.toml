@@ -5,7 +5,8 @@
 [DEFAULT]
 
 # The directory that contains extracted files of everything you've downloaded.
-weight_dir = "/home/gamir/adiz/Code/runs/wl-coref/weights"
+output_dir = "/home/gamir/adiz/Code/runs/wl-coref/weights"
+cache_dir = "/home/gamir/adiz/Code/runs/wl-coref/cache_dir"
 
 # Train, dev and test jsonlines
 train_data = "/home/gamir/adiz/datasets/wl-ontonotes/english_train_head.jsonlines"
@@ -64,13 +65,13 @@ bert_finetune = true
 dropout_rate = 0.3
 
 # Bert learning rate (only used if bert_finetune is set)
-bert_learning_rate = 1e-5
+lr_backbone = 1e-5
 
 # Task learning rate
-learning_rate = 3e-4
+lr = 3e-4
 
 # For how many epochs the training is done
-train_epochs = 20
+num_train_epochs = 20
 
 # Controls the weight of binary cross entropy loss added to nlml loss
 bce_loss_weight = 0.5

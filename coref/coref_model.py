@@ -71,10 +71,15 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         self.args = args
         self.device = args.device
         self.config = CorefModel._load_config(config_path, section)
-        self.config.weight_dir = os.path.join(self.config.weight_dir, \
+        self.config.output_dir = os.path.join(self.config.output_dir, \
             datetime.now().strftime(f"%m_%d_%Y_%H_%M_%S")+'_'+args.run_name)
-        if not os.path.exists(self.config.weight_dir):
-            os.makedirs(self.config.weight_dir)
+        if not os.path.exists(self.config.output_dir):
+            os.makedirs(self.config.output_dir)
+        wb_config = wandb.config
+        logger.info(f"---- CONFIG ----")
+        for key, val in vars(self.config).items():
+            logger.info(f"{key} - {val}")
+            wb_config[key] = val
         self.epochs_trained = epochs_trained
         self._docs: Dict[str, List[Doc]] = {}
         self._build_model()
@@ -198,13 +203,13 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         """
         Loads pretrained weights of modules saved in a file located at path.
         If path is None, the last saved model with current configuration
-        in weight_dir is loaded.
+        in output_dir is loaded.
         Assumes files are named like {configuration}_(e{epoch}_{time})*.pt.
         """
         if path is None:
             pattern = rf"{self.config.section}_\(e(\d+)_[^()]*\).*\.pt"
             files = []
-            for f in os.listdir(self.config.weight_dir):
+            for f in os.listdir(self.config.output_dir):
                 match_obj = re.match(pattern, f)
                 if match_obj:
                     files.append((int(match_obj.group(1)), f))
@@ -212,9 +217,9 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 if noexception:
                     print("No weights have been loaded", flush=True)
                     return
-                raise OSError(f"No weights found in {self.config.weight_dir}!")
+                raise OSError(f"No weights found in {self.config.output_dir}!")
             _, path = sorted(files)[-1]
-            path = os.path.join(self.config.weight_dir, path)
+            path = os.path.join(self.config.output_dir, path)
 
         if map_location is None:
             map_location = self.device
@@ -298,7 +303,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         to_save.extend(self.optimizers.items())
         to_save.extend(self.schedulers.items())
 
-        path = os.path.join(self.config.weight_dir,
+        path = os.path.join(self.config.output_dir,
                             f"{self.config.section}"
                             f"_e{self.epochs_trained}.pt")
         savedict = {name: module.state_dict() for name, module in to_save}
@@ -321,7 +326,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         global_step = 0
         recent_losses = []
         recent_losses_parts = {}
-        for epoch in range(self.epochs_trained, self.config.train_epochs):
+        for epoch in range(self.epochs_trained, self.config.num_train_epochs):
             self.training = True
             running_c_loss = 0.0
             running_s_loss = 0.0
@@ -389,8 +394,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 print(f'previous checkpoint with f1 {prev_best_f1} was {prev_best_f1_global_step}')
                 best_f1 = eval_f1
                 best_f1_global_step = global_step
-                print(f'saved checkpoint with f1 {best_f1} in step {best_f1_global_step} to {self.config.weight_dir}')
-                path_to_remove = os.path.join(self.config.weight_dir,
+                print(f'saved checkpoint with f1 {best_f1} in step {best_f1_global_step} to {self.config.output_dir}')
+                path_to_remove = os.path.join(self.config.output_dir,
                                     f"{self.config.section}"
                                     f"_e{prev_best_f1_global_step}.pt")
                 if prev_best_f1_global_step > -1 and os.path.exists(path_to_remove):
@@ -399,7 +404,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 else:
                     self.save_weights()
                     print(f'saved checkpoint in global_step {global_step}')
-                    path_to_remove = os.path.join(self.config.weight_dir,
+                    path_to_remove = os.path.join(self.config.output_dir,
                                         f"{self.config.section}"
                                         f"_e{last_saved_global_step}.pt")
                     if last_saved_global_step > -1 and last_saved_global_step != best_f1_global_step and os.path.exists(path_to_remove):
@@ -410,7 +415,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                     wandb.log({'eval_best_f1':best_f1}, step=global_step)
                     try:
                         wandb.log({'eval_best_f1_checkpoint':\
-                            os.path.join(self.config.weight_dir,
+                            os.path.join(self.config.output_dir,
                                     f"{self.config.section}"
                                     f"_e{best_f1_global_step}.pt")}, step=global_step)
                     except:
@@ -513,12 +518,12 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
         if self.config.bert_finetune:
             self.optimizers["bert_optimizer"] = torch.optim.Adam(
-                self.bert.parameters(), lr=self.config.bert_learning_rate
+                self.bert.parameters(), lr=self.config.lr_backbone
             )
             self.schedulers["bert_scheduler"] = \
                 transformers.get_linear_schedule_with_warmup(
                     self.optimizers["bert_optimizer"],
-                    n_docs, n_docs * self.config.train_epochs
+                    n_docs, n_docs * self.config.num_train_epochs
                 )
 
         # Must ensure the same ordering of parameters between launches
@@ -531,11 +536,11 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 params.append(param)
 
         self.optimizers["general_optimizer"] = torch.optim.Adam(
-            params, lr=self.config.learning_rate)
+            params, lr=self.config.lr)
         self.schedulers["general_scheduler"] = \
             transformers.get_linear_schedule_with_warmup(
                 self.optimizers["general_optimizer"],
-                0, n_docs * self.config.train_epochs
+                0, n_docs * self.config.num_train_epochs
             )
 
     def _clusterize(self, doc: Doc, scores: torch.Tensor, top_indices: torch.Tensor):

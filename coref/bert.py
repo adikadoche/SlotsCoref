@@ -66,11 +66,11 @@ def load_bert(config: Config, device) -> Tuple[AutoModel, AutoTokenizer]:
     if tokenizer_kwargs:
         print(f"Using tokenizer kwargs: {tokenizer_kwargs}")
     tokenizer = AutoTokenizer.from_pretrained(config.bert_model,
-                                              cache_dir='/home/gamir/adiz/Code/runs/wl-coref/cache_dir',
+                                              cache_dir=config.cache_dir,
                                               **tokenizer_kwargs)
 
     model = AutoModel.from_pretrained(config.bert_model,
-                                      cache_dir='/home/gamir/adiz/Code/runs/wl-coref/cache_dir',)\
+                                      cache_dir=config.cache_dir,)\
                                           .to(device)
 
     print("Bert successfully loaded.")
