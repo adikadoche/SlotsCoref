@@ -30,7 +30,7 @@ from coref.span_predictor import SpanPredictor
 from coref.tokenizer_customization import TOKENIZER_FILTERS, TOKENIZER_MAPS
 from coref.utils import GraphNode
 from coref.word_encoder import WordEncoder
-from coref.metrics import MentionEvaluator
+from coref.metrics import MentionEvaluator, CorefEvaluator
 from coref.coref_analysis import print_predictions
 
 logger = logging.getLogger(__name__)
@@ -104,9 +104,10 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
     # ========================================================== Public methods
 
     @torch.no_grad()
-    def evaluate(self, docs,
+    def evaluate(self, 
                  data_split: str = "dev",
-                 word_level_conll: bool = False
+                 word_level_conll: bool = False,
+                 docs = None
                  ) -> Tuple[float, Tuple[float, float, float]]:
         """ Evaluates the modes on the data split provided.
 
@@ -119,12 +120,13 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             span-level LEA: f1, precision, recal
         """
         self.training = False
-        # cluster_train_evaluator = CorefEvaluator()
-        # mention_train_evaluator = MentionEvaluator()
-        # men_propos_train_evaluator = MentionEvaluator()
-        w_checker = ClusterChecker()
-        s_checker = ClusterChecker()
+        if docs is None:
+            docs = self._get_docs(self.config.__dict__[f"predict_file"])            
+        cluster_evaluator = CorefEvaluator()
+        mention_evaluator = CorefEvaluator()
         men_prop_evaluator = MentionEvaluator()
+        # w_checker = ClusterChecker()
+        # s_checker = ClusterChecker()
         running_loss = 0.0
         s_correct = 0
         s_total = 0
@@ -164,12 +166,17 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             #     conll.write_conll(doc, res.span_clusters, pred_f)
 
             # mentions scored
-            w_checker.add_predictions(doc["word_clusters"], res.word_clusters)
-            w_lea = w_checker.total_lea
+            # w_checker.add_predictions(doc["word_clusters"], res.word_clusters)
+            # w_lea = w_checker.total_lea
 
             # final scores
-            s_checker.add_predictions(doc["span_clusters"], res.span_clusters)
-            s_lea = s_checker.total_lea
+            # s_checker.add_predictions(doc["span_clusters"], res.span_clusters)
+            cluster_evaluator.update([doc["span_clusters"]], [res.span_clusters])
+            mention_evaluator.update([[[(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for j in \
+                range(len(doc['word_clusters'][i]))] for i in range(len(doc['word_clusters']))]], \
+                    [[[(res.word_clusters[i][j],res.word_clusters[i][j]) for j in \
+                range(len(res.word_clusters[i]))] for i in range(len(res.word_clusters))]])
+            # s_lea = s_checker.total_lea
 
             all_predicted_clusters.append(res.span_clusters)
             all_gold_clusters.append(doc["span_clusters"])
@@ -177,25 +184,25 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
             del res
 
-            pbar.set_description(
-                f"{data_split}:"
-                f" | WL: "
-                f" loss: {running_loss / (pbar.n + 1):<.5f},"
-                f" f1: {w_lea[0]:.5f},"
-                f" p: {w_lea[1]:.5f},"
-                f" r: {w_lea[2]:<.5f}"
-                f" | SL: "
-                f" sa: {s_correct / s_total:<.5f},"
-                f" f1: {s_lea[0]:.5f},"
-                f" p: {s_lea[1]:.5f},"
-                f" r: {s_lea[2]:<.5f}"
-            )
+            # pbar.set_description(
+            #     f"{data_split}:"
+            #     f" | WL: "
+            #     f" loss: {running_loss / (pbar.n + 1):<.5f},"
+            #     f" f1: {w_lea[0]:.5f},"
+            #     f" p: {w_lea[1]:.5f},"
+            #     f" r: {w_lea[2]:<.5f}"
+            #     f" | SL: "
+            #     f" sa: {s_correct / s_total:<.5f},"
+            #     f" f1: {s_lea[0]:.5f},"
+            #     f" p: {s_lea[1]:.5f},"
+            #     f" r: {s_lea[2]:<.5f}"
+            # )
         print()
 
         print("============ {data_split} EXAMPLES ============")
         print_predictions(all_gold_clusters, all_predicted_clusters, all_tokens, self.args.max_eval_print)
 
-        return (running_loss / len(docs), s_checker, w_checker, men_prop_evaluator)
+        return (running_loss / len(docs), cluster_evaluator, mention_evaluator, men_prop_evaluator)
 
     def load_weights(self,
                      path: Optional[str] = None,
@@ -209,7 +216,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         Assumes files are named like {configuration}_(e{epoch}_{time})*.pt.
         """
         if path is None:
-            pattern = rf"{self.config.section}_\(e(\d+)_[^()]*\).*\.pt"
+            pattern = rf"{self.config.section}_e(\d+)_[^()]*.*\.pt"
             files = []
             for f in os.listdir(self.config.output_dir):
                 match_obj = re.match(pattern, f)
@@ -323,8 +330,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         avg_spans = sum(len(doc["head2span"]) for doc in train_docs) / len(train_docs)
 
         best_f1 = -1
-        best_f1_global_step = -1
-        last_saved_global_step = -1
+        best_f1_epoch = -1
+        last_saved_epoch = -1
         global_step = 0
         recent_losses = []
         recent_losses_parts = {}
@@ -384,44 +391,44 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 global_step += 1
 
             logger.info("***** Running evaluation {} *****".format(str(self.epochs_trained)))
-            eval_loss, eval_span_checker, eval_word_checker, eval_men_prop_evaluator = \
-                self.evaluate(eval_docs)
-            eval_f1, eval_p, eval_r = eval_span_checker.total_lea
-            eval_f1m, eval_pm, eval_rm = eval_word_checker.total_lea
-            eval_f1mp, eval_pmp, eval_rmp = eval_men_prop_evaluator.get_prf()
+            eval_loss, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
+                self.evaluate(docs=eval_docs)
+            eval_p, eval_r, eval_f1 = eval_cluster_evaluator.get_prf()
+            eval_pm, eval_rm, eval_f1m = eval_men_evaluator.get_prf()
+            eval_pmp, eval_rmp, eval_f1mp = eval_men_prop_evaluator.get_prf()
             if eval_f1 > best_f1:
                 prev_best_f1 = best_f1
-                prev_best_f1_global_step = best_f1_global_step
+                prev_best_f1_epoch = best_f1_epoch
                 self.save_weights()
-                print(f'previous checkpoint with f1 {prev_best_f1} was {prev_best_f1_global_step}')
+                print(f'previous checkpoint with f1 {prev_best_f1} was {prev_best_f1_epoch}')
                 best_f1 = eval_f1
-                best_f1_global_step = global_step
-                print(f'saved checkpoint with f1 {best_f1} in step {best_f1_global_step} to {self.config.output_dir}')
+                best_f1_epoch = epoch
+                print(f'saved checkpoint with f1 {best_f1} in step {best_f1_epoch} to {self.config.output_dir}')
                 path_to_remove = os.path.join(self.config.output_dir,
                                     f"{self.config.section}"
-                                    f"_e{prev_best_f1_global_step}.pt")
-                if prev_best_f1_global_step > -1 and os.path.exists(path_to_remove):
+                                    f"_e{prev_best_f1_epoch}.pt")
+                if prev_best_f1_epoch > -1 and os.path.exists(path_to_remove):
                     shutil.rmtree(path_to_remove)
                     print(f'removed checkpoint with f1 {prev_best_f1} from {path_to_remove}')
                 else:
                     self.save_weights()
-                    print(f'saved checkpoint in global_step {global_step}')
+                    print(f'saved checkpoint in epoch {epoch}')
                     path_to_remove = os.path.join(self.config.output_dir,
                                         f"{self.config.section}"
-                                        f"_e{last_saved_global_step}.pt")
-                    if last_saved_global_step > -1 and last_saved_global_step != best_f1_global_step and os.path.exists(path_to_remove):
+                                        f"_e{last_saved_epoch}.pt")
+                    if last_saved_epoch > -1 and last_saved_epoch != best_f1_epoch and os.path.exists(path_to_remove):
                         shutil.rmtree(path_to_remove)
-                        print(f'removed previous checkpoint in global_step {last_saved_global_step}')
-                    last_saved_global_step = global_step
-                if not self.args.is_debug:
-                    wandb.log({'eval_best_f1':best_f1}, step=global_step)
-                    try:
-                        wandb.log({'eval_best_f1_checkpoint':\
-                            os.path.join(self.config.output_dir,
-                                    f"{self.config.section}"
-                                    f"_e{best_f1_global_step}.pt")}, step=global_step)
-                    except:
-                        pass
+                        print(f'removed previous checkpoint in epoch {last_saved_epoch}')
+                    last_saved_epoch = epoch
+            if not self.args.is_debug:
+                wandb.log({'eval_best_f1':best_f1}, step=global_step)
+                try:
+                    wandb.log({'eval_best_f1_checkpoint':\
+                        os.path.join(self.config.output_dir,
+                                f"{self.config.section}"
+                                f"_e{best_f1_epoch}.pt")}, step=global_step)
+                except:
+                    pass
             eval_results = {'loss': eval_loss,
                     'avg_f1': eval_f1,
                     'precision': eval_p,
@@ -442,11 +449,11 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
             if self.epochs_trained % 3 == 0:
                 logger.info("***** Running Train evaluation {} *****".format(str(self.epochs_trained)))
-                _, train_span_checker, train_word_checker, train_men_prop_evaluator = \
-                    self.evaluate(train_docs, data_split='train')
-                train_f1, train_p, train_r = train_span_checker.total_lea
-                train_f1m, train_pm, train_rm = train_word_checker.total_lea
-                train_f1mp, train_pmp, train_rmp = train_men_prop_evaluator.get_prf()
+                _, train_cluster_evaluator, train_men_evaluator, train_men_prop_evaluator = \
+                    self.evaluate(docs=train_docs, data_split='train')
+                train_p, train_r, train_f1 = train_cluster_evaluator.get_prf()
+                train_pm, train_rm, train_f1m = train_men_evaluator.get_prf()
+                train_pmp, train_rmp, train_f1mp = train_men_prop_evaluator.get_prf()
                 dict_to_log = {}
                 dict_to_log['Train Precision'] = train_p
                 dict_to_log['Train Recall'] = train_r
