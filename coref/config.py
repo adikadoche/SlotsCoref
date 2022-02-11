@@ -15,9 +15,9 @@ class Config:  # pylint: disable=too-many-instance-attributes, too-few-public-me
     output_dir: str
     cache_dir: str
 
-    train_data: str
-    dev_data: str
-    test_data: str
+    train_file: str
+    predict_file: str
+    test_file: str
 
     bert_model: str
     bert_window_size: int

@@ -9,9 +9,9 @@ output_dir = "/home/gamir/adiz/Code/runs/wl-coref/weights"
 cache_dir = "/home/gamir/adiz/Code/runs/wl-coref/cache_dir"
 
 # Train, dev and test jsonlines
-train_data = "/home/gamir/adiz/datasets/wl-ontonotes/english_train_head.jsonlines"
-dev_data = "/home/gamir/adiz/datasets/wl-ontonotes/english_dev_head.jsonlines"
-test_data = "/home/gamir/adiz/datasets/wl-ontonotes/english_test_head.jsonlines"
+train_file = "/home/gamir/adiz/datasets/wl-ontonotes/english_train_head.jsonlines"
+predict_file = "/home/gamir/adiz/datasets/wl-ontonotes/english_dev_head.jsonlines"
+test_file = "/home/gamir/adiz/datasets/wl-ontonotes/english_test_head.jsonlines"
 
 # Bert settings ======================
 

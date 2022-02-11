@@ -104,7 +104,7 @@ if __name__ == "__main__":
             logger.info(f"{key} - {val}")
 
     seed(2020)
-    model = CorefModel(args, args.config_file, args.experiment)
+    model = CorefModel(args, args.config_file, args.model_type)
 
     if args.batch_size:
         model.config.a_scoring_batch_size = args.batch_size

@@ -39,7 +39,7 @@ def build_doc(doc: dict, model: CorefModel) -> dict:
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
-    argparser.add_argument("experiment")
+    argparser.add_argument("model_type")
     argparser.add_argument("input_file")
     argparser.add_argument("output_file")
     argparser.add_argument("--config-file", default="config.toml")
@@ -53,7 +53,7 @@ if __name__ == "__main__":
                                 " if there aren't any, an error is raised.")
     args = argparser.parse_args()
 
-    model = CorefModel(args.device, args.config_file, args.experiment)
+    model = CorefModel(args.device, args.config_file, args.model_type)
 
     if args.batch_size:
         model.config.a_scoring_batch_size = args.batch_size

@@ -315,8 +315,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         Trains all the trainable blocks in the model using the config provided.
         """
         logger.info("Training/evaluation parameters %s", self.args)
-        train_docs = list(self._get_docs(self.config.train_data))
-        eval_docs = self._get_docs(self.config.__dict__[f"dev_data"])
+        train_docs = list(self._get_docs(self.config.train_file))
+        eval_docs = self._get_docs(self.config.__dict__[f"predict_file"])
         docs_ids = list(range(len(train_docs)))
         avg_spans = sum(len(doc["head2span"]) for doc in train_docs) / len(train_docs)
 
@@ -509,7 +509,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         }
 
     def _build_optimizers(self):
-        n_docs = len(self._get_docs(self.config.train_data))
+        n_docs = len(self._get_docs(self.config.train_file))
         self.optimizers: Dict[str, torch.optim.Optimizer] = {}
         self.schedulers: Dict[str, torch.optim.lr_scheduler.LambdaLR] = {}
 
@@ -517,7 +517,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             param.requires_grad = self.config.bert_finetune
 
         if self.config.bert_finetune:
-            self.optimizers["bert_optimizer"] = torch.optim.Adam(
+            self.optimizers["bert_optimizer"] = torch.optim.AdamW(
                 self.bert.parameters(), lr=self.config.lr_backbone
             )
             self.schedulers["bert_scheduler"] = \
@@ -535,7 +535,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 param.requires_grad = True
                 params.append(param)
 
-        self.optimizers["general_optimizer"] = torch.optim.Adam(
+        self.optimizers["general_optimizer"] = torch.optim.AdamW(
             params, lr=self.config.lr)
         self.schedulers["general_scheduler"] = \
             transformers.get_linear_schedule_with_warmup(
