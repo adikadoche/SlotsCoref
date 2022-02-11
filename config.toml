@@ -38,7 +38,7 @@ sp_embedding_size = 64
 a_scoring_batch_size = 512
 
 # AnaphoricityScorer FFNN parameters
-hidden_size = 1024
+hidden_size = 512
 n_hidden_layers = 1
 
 

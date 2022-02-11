@@ -18,7 +18,8 @@ from tqdm import tqdm   # type: ignore
 import transformers     # type: ignore
 
 from coref import bert, conll, utils
-from coref.anaphoricity_scorer import AnaphoricityScorer
+# from coref.anaphoricity_scorer import AnaphoricityScorer
+from coref.slots_scorer import SlotsScorer
 from coref.cluster_checker import ClusterChecker
 from coref.config import Config
 from coref.const import CorefResult, Doc
@@ -51,7 +52,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         we (WordEncoder)
         rough_scorer (RoughScorer)
         pw (PairwiseEncoder)
-        a_scorer (AnaphoricityScorer)
+        s_scorer (SlotsScorer)
         sp (SpanPredictor)
     """
     def __init__(self,
@@ -75,11 +76,12 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             datetime.now().strftime(f"%m_%d_%Y_%H_%M_%S")+'_'+args.run_name)
         if not os.path.exists(self.config.output_dir):
             os.makedirs(self.config.output_dir)
-        wb_config = wandb.config
-        logger.info(f"---- CONFIG ----")
-        for key, val in vars(self.config).items():
-            logger.info(f"{key} - {val}")
-            wb_config[key] = val
+        if not args.is_debug:  
+            wb_config = wandb.config
+            logger.info(f"---- CONFIG ----")
+            for key, val in vars(self.config).items():
+                logger.info(f"{key} - {val}")
+                wb_config[key] = val
         self.epochs_trained = epochs_trained
         self._docs: Dict[str, List[Doc]] = {}
         self._build_model()
@@ -272,17 +274,17 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             top_rough_scores_batch = top_rough_scores[i:i + batch_size]
 
             # a_scores_batch    [batch_size, n_ants]
-            a_scores_batch = self.a_scorer(
+            s_scores_batch = self.s_scorer(
                 all_mentions=words, mentions_batch=words_batch,
                 pw_batch=pw_batch, top_indices_batch=top_indices_batch,
                 top_rough_scores_batch=top_rough_scores_batch
             )
-            a_scores_lst.append(a_scores_batch)
+            s_scores_lst.append(s_scores_batch)
 
         res = CorefResult()
 
         # coref_scores  [n_spans, n_ants]
-        res.coref_scores = torch.cat(a_scores_lst, dim=0)
+        res.coref_scores = torch.cat(s_scores_lst, dim=0)
 
         res.coref_y = self._get_ground_truth(
             cluster_ids, top_indices, (top_rough_scores > float("-inf")))
@@ -496,7 +498,9 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         pair_emb = bert_emb * 3 + self.pw.shape
 
         # pylint: disable=line-too-long
-        self.a_scorer = AnaphoricityScorer(pair_emb, self.config).to(self.device)
+        self.s_scorer = SlotsScorer(\
+            pair_emb, self.config, self.args.num_queries+self.args.num_junk_queries,\
+                self.args.random_queries).to(self.device)
         self.we = WordEncoder(bert_emb, self.config).to(self.device)
         self.rough_scorer = RoughScorer(bert_emb, self.config).to(self.device)
         self.sp = SpanPredictor(bert_emb, self.config.sp_embedding_size).to(self.device)
@@ -504,7 +508,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         self.trainable: Dict[str, torch.nn.Module] = {
             "bert": self.bert, "we": self.we,
             "rough_scorer": self.rough_scorer,
-            "pw": self.pw, "a_scorer": self.a_scorer,
+            "pw": self.pw, "s_scorer": self.s_scorer,
             "sp": self.sp
         }
 
