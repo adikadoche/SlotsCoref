@@ -64,11 +64,7 @@ class SlotsScorer(torch.nn.Module):
         ) 
 
     def forward(self, *,  # type: ignore  # pylint: disable=arguments-differ  #35566 in pytorch
-                all_mentions: torch.Tensor,
-                mentions_batch: torch.Tensor,
-                pw_batch: torch.Tensor,
-                top_indices_batch: torch.Tensor,
-                top_rough_scores_batch: torch.Tensor,
+                all_mentions: torch.Tensor
                 ) -> torch.Tensor:
         """ Builds a pairwise matrix, scores the pairs and returns the scores.
 
@@ -83,17 +79,13 @@ class SlotsScorer(torch.nn.Module):
             torch.Tensor [batch_size, n_ants + 1]
                 anaphoricity scores for the pairs + a dummy column
         """
-        # [batch_size, n_ants, pair_emb]
-        pair_matrix = self._get_pair_matrix(
-            all_mentions, mentions_batch, pw_batch, top_indices_batch)
-
         # [batch_size, n_ants]
         inputs, cluster_logits, coref_logits = self._slot_attention(\
-            self._ffnn(pair_matrix), top_rough_scores_batch > float('-inf'))
-        scores = top_rough_scores_batch
-        scores = utils.add_dummy(scores, eps=True)
+            self._ffnn(all_mentions).unsqueeze(0))
+        # scores = top_rough_scores_batch
+        # scores = utils.add_dummy(scores, eps=True)
 
-        return scores
+        return inputs, cluster_logits, coref_logits
 
     def _ffnn(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -108,13 +100,8 @@ class SlotsScorer(torch.nn.Module):
         x = self.hidden(x)
         return x
 
-    def _slot_attention(self, input_emb, mask):
-        words, ants, emb, device = *input_emb.shape, input_emb.device
-
-        input_emb = input_emb.reshape(1, -1, emb)
-        mask = mask.type(torch.long).reshape(1, -1, 1)
-
-        input_emb = mask * input_emb + (1-mask) * torch.zeros_like(input_emb)
+    def _slot_attention(self, input_emb):
+        _, _, emb, device = *input_emb.shape, input_emb.device
 
         if self.random_queries:
             mu = self.slots_mu.expand(1, self.num_slots, -1)
@@ -154,10 +141,7 @@ class SlotsScorer(torch.nn.Module):
         coref_logits = (dots.softmax(dim=1) + self.slots_eps).clamp(max=1.0)
         cluster_logits = self.slots_mlp_classifier(slots)
 
-        input_emb = input_emb.reshape(words, ants, -1)
-        coref_logits = coref_logits.reshape(self.num_queries, words, ants)
-
-        return inputs, cluster_logits, coref_logits
+        return inputs.squeeze(0), cluster_logits.squeeze(0), coref_logits.squeeze(0)
 
     @staticmethod
     def _get_pair_matrix(all_mentions: torch.Tensor,

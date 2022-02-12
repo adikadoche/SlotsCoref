@@ -1,6 +1,7 @@
 """ see __init__.py """
 
 from datetime import datetime
+import itertools
 import os
 import pickle
 import random
@@ -23,7 +24,7 @@ from coref.slots_scorer import SlotsScorer
 from coref.cluster_checker import ClusterChecker
 from coref.config import Config
 from coref.const import CorefResult, Doc
-from coref.loss import CorefLoss
+from coref.loss import MatchingLoss
 from coref.pairwise_encoder import PairwiseEncoder
 from coref.rough_scorer import RoughScorer
 from coref.span_predictor import SpanPredictor
@@ -87,7 +88,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         self._build_model()
         self._build_optimizers()
         self._set_training(False)
-        self._coref_criterion = CorefLoss(self.config.bce_loss_weight)
+        # self._coref_criterion = CorefLoss(self.config.bce_loss_weight)
+        self._coref_criterion = MatchingLoss(args.num_queries)
         self._span_criterion = torch.nn.CrossEntropyLoss(reduction="sum")
 
     @property
@@ -266,37 +268,36 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         # Obtain bilinear scores and leave only top-k antecedents for each word
         # top_rough_scores  [n_words, n_ants]
         # top_indices       [n_words, n_ants]
-        top_rough_scores, top_indices = self.rough_scorer(words)
+        # top_rough_scores, top_indices = self.rough_scorer(words)
 
         # Get pairwise features [n_words, n_ants, n_pw_features]
-        pw = self.pw(top_indices, doc)
+        # pw = self.pw(top_indices, doc)
 
-        batch_size = self.config.a_scoring_batch_size
-        a_scores_lst: List[torch.Tensor] = []
+        # batch_size = self.config.a_scoring_batch_size
+        # s_scores_lst: List[torch.Tensor] = []
+        # s_scores_lst = []
 
-        for i in range(0, len(words), batch_size):
-            pw_batch = pw[i:i + batch_size]
-            words_batch = words[i:i + batch_size]
-            top_indices_batch = top_indices[i:i + batch_size]
-            top_rough_scores_batch = top_rough_scores[i:i + batch_size]
+        # for i in range(0, len(words), batch_size):
+            # pw_batch = pw[i:i + batch_size]
+            # words_batch = words[i:i + batch_size]
+            # top_indices_batch = top_indices[i:i + batch_size]
+            # top_rough_scores_batch = top_rough_scores[i:i + batch_size]
 
             # a_scores_batch    [batch_size, n_ants]
-            s_scores_batch = self.s_scorer(
-                all_mentions=words, mentions_batch=words_batch,
-                pw_batch=pw_batch, top_indices_batch=top_indices_batch,
-                top_rough_scores_batch=top_rough_scores_batch
-            )
-            s_scores_lst.append(s_scores_batch)
-
         res = CorefResult()
+        res.input_emb, res.cluster_logits, res.coref_logits = self.s_scorer(
+            all_mentions=words
+        )
+            # s_scores_lst.append((cluster_logits, coref_logits))
 
         # coref_scores  [n_spans, n_ants]
-        res.coref_scores = torch.cat(s_scores_lst, dim=0)
+        # res.coref_scores = torch.cat(s_scores_lst, dim=0)
 
-        res.coref_y = self._get_ground_truth(
-            cluster_ids, top_indices, (top_rough_scores > float("-inf")))
-        res.word_clusters = self._clusterize(doc, res.coref_scores,
-                                             top_indices)
+        # res.coref_y = self._get_ground_truth(
+        #     cluster_ids, top_indices, (top_rough_scores > float("-inf")))
+        res.word_clusters = self._clusterize_slots(res.cluster_logits.cpu().detach(), res.coref_logits.cpu().detach())
+        # res.word_clusters = self._clusterize(doc, s_scores_lst,
+        #                                      top_indices)
         res.span_scores, res.span_y = self.sp.get_training_data(doc, words)
 
         if not self.training:
@@ -349,17 +350,24 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
                 res = self.run(doc)
 
-                c_loss = self._coref_criterion(res.coref_scores, res.coref_y)
+                c_loss, cost_parts = self._coref_criterion(res, doc)
                 if res.span_y:
                     s_loss = (self._span_criterion(res.span_scores[:, :, 0], res.span_y[0])
                               + self._span_criterion(res.span_scores[:, :, 1], res.span_y[1])) / avg_spans / 2
                 else:
                     s_loss = torch.zeros_like(c_loss)
+                cost_parts['loss_span'] = 3 * s_loss.detach().cpu()
 
                 del res
 
                 (c_loss + s_loss).backward()
                 recent_losses.append((c_loss + s_loss).item())
+                for key in cost_parts.keys():
+                    if key in recent_losses_parts.keys() and len(recent_losses_parts[key]) > 0:
+                        recent_losses_parts[key].append(cost_parts[key])
+                    else:
+                        recent_losses_parts[key] = [cost_parts[key]]
+
                 running_c_loss += c_loss.item()
                 running_s_loss += s_loss.item()
 
@@ -382,11 +390,11 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                         dict_to_log['lr'] = self.optimizers["general_optimizer"].param_groups[0]['lr']
                         dict_to_log['lr_bert'] = self.optimizers["bert_optimizer"].param_groups[0]['lr']
                         dict_to_log['loss'] = np.mean(recent_losses)
-                        # for key in recent_losses_parts.keys():
-                        #     dict_to_log[key] = np.mean(recent_losses_parts[key])
+                        for key in recent_losses_parts.keys():
+                            dict_to_log[key] = np.mean(recent_losses_parts[key])
                         wandb.log(dict_to_log, step=global_step)
                     recent_losses.clear()
-                    # recent_losses_parts.clear()
+                    recent_losses_parts.clear()
                 
                 global_step += 1
 
@@ -506,7 +514,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
         # pylint: disable=line-too-long
         self.s_scorer = SlotsScorer(\
-            pair_emb, self.config, self.args.num_queries+self.args.num_junk_queries,\
+            bert_emb, self.config, self.args.num_queries+self.args.num_junk_queries,\
                 self.args.random_queries).to(self.device)
         self.we = WordEncoder(bert_emb, self.config).to(self.device)
         self.rough_scorer = RoughScorer(bert_emb, self.config).to(self.device)
@@ -554,6 +562,36 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 0, n_docs * self.config.num_train_epochs
             )
 
+    def _clusterize_slots(self, cluster_logits, coref_logits):
+        coref_logits = coref_logits.squeeze(0)
+        cur_cluster_bool = cluster_logits.squeeze(-1).numpy() >= 0.01 #TODO: should the cluster and coref share the same threshold?
+        cur_cluster_bool = np.tile(cur_cluster_bool.reshape([1, -1, 1]), (1, 1, coref_logits.shape[-1]))
+        cluster_mention_mask = cur_cluster_bool
+
+        max_bools = torch.max(coref_logits,0)[1].reshape([-1,1]).repeat([1, coref_logits.shape[0]]) == \
+            torch.arange(coref_logits.shape[0], device=coref_logits.device).reshape([1, -1]).repeat(coref_logits.shape[1], 1)
+        max_bools = max_bools.transpose(0, 1).numpy()
+        coref_bools = cluster_mention_mask & max_bools
+        coref_logits_after_cluster_bool = np.multiply(coref_bools, coref_logits)
+        max_coref_score, max_coref_cluster_ind = coref_logits_after_cluster_bool[0].max(0) #[gold_mention] choosing the index of the best cluster per gold mention
+        coref_bools = max_coref_score > 0
+
+        true_coref_indices = np.where(coref_bools)[0] #indices of the gold mention that their clusters pass threshold
+        max_coref_cluster_ind_filtered = max_coref_cluster_ind[coref_bools] #index of the best clusters per gold mention, if it passes the threshold
+
+        cluster_id_to_tokens = {k: list(v) for k, v in itertools.groupby(sorted(list(zip(true_coref_indices, max_coref_cluster_ind_filtered.numpy())), key=lambda x: x[-1]), lambda x: x[-1])}
+
+        clusters = []
+
+        for gold_mentions_inds in cluster_id_to_tokens.values():
+            current_cluster = []
+            for mention_id in gold_mentions_inds:
+                current_cluster.append(mention_id[0])
+            if len(current_cluster) > 1:
+                clusters.append(current_cluster)
+
+        return clusters
+
     def _clusterize(self, doc: Doc, scores: torch.Tensor, top_indices: torch.Tensor):
         antecedents = scores.argmax(dim=1) - 1
         not_dummy = antecedents >= 0
@@ -594,9 +632,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         return self._docs[path]
 
     @staticmethod
-    def _get_ground_truth(cluster_ids: torch.Tensor,
-                          top_indices: torch.Tensor,
-                          valid_pair_map: torch.Tensor) -> torch.Tensor:
+    def _get_ground_truth(cluster_ids: torch.Tensor) -> torch.Tensor:
         """
         Args:
             cluster_ids: tensor of shape [n_words], containing cluster indices
@@ -611,13 +647,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             tensor of shape [n_words, n_ants + 1] (dummy added),
                 containing 1 at position [i, j] if i-th and j-th words corefer.
         """
-        y = cluster_ids[top_indices] * valid_pair_map  # [n_words, n_ants]
-        y[y == 0] = -1                                 # -1 for non-gold words
-        y = utils.add_dummy(y)                         # [n_words, n_cands + 1]
-        y = (y == cluster_ids.unsqueeze(1))            # True if coreferent
-        # For all rows with no gold antecedents setting dummy to True
-        y[y.sum(dim=1) == 0, 0] = True
-        return y.to(torch.float)
+        return cluster_ids != 0
 
     @staticmethod
     def _load_config(config_path: str,

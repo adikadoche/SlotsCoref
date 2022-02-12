@@ -37,8 +37,8 @@ sp_embedding_size = 64
 # are less memory intensive, so they are always done in just one batch.
 a_scoring_batch_size = 512
 
-# AnaphoricityScorer FFNN parameters
-hidden_size = 512
+# SlotsScorer FFNN parameters
+hidden_size = 256
 n_hidden_layers = 1
 
 

@@ -32,3 +32,7 @@ class CorefResult:
 
     span_scores: torch.Tensor = None                   # [n_heads, n_words, 2]
     span_y: Tuple[torch.Tensor, torch.Tensor] = None   # [n_heads] x2
+
+    coref_logits: torch.Tensor = None   
+    cluster_logits: torch.Tensor = None   
+    input_emb: torch.Tensor = None   

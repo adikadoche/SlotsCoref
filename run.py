@@ -48,9 +48,12 @@ if __name__ == "__main__":
     # os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     #wandb
     #adamw
+    #word leve pruning instead of antecedent pruning?
+    #speaker+genre in text
     #loadingmodel
     #slots params
     #slots algo
+    #different loss options (max,bce,div)
     #more loss terms
     #self attn?
     args = parse_args()
