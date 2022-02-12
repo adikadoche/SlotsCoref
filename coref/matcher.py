@@ -67,15 +67,14 @@ class HungarianMatcher(nn.Module):
         cost_is_cluster = F.binary_cross_entropy(cluster_logits, torch.ones_like(cluster_logits), reduction='none') # [num_queries, 1]
         cost_is_cluster = cost_is_cluster.repeat(1, num_of_gold_clusters) # [num_queries, gold_clusters]
 
-        cost_coref = []
-        for cluster in real_cluster_target:
-            gold_per_token_repeated = cluster[:-1].repeat(self.num_queries, 1) # [num_queries, tokens]
-            clamped_logits = (cluster_logits * coref_logits[:,:-1]).clamp(max=1.0)
-            losses_for_current_gold_cluster = F.binary_cross_entropy(clamped_logits, gold_per_token_repeated, reduction='none').mean(1) \
-                + cluster_logits.squeeze(-1) * coref_logits[:, -1]
-
-            cost_coref.append(losses_for_current_gold_cluster) # [num_queries]
-        cost_coref = torch.stack(cost_coref, 1) # [num_queries, gold_clusters]
+        cluster_repeated = real_cluster_target[:,:-1].unsqueeze(1).repeat(1, coref_logits.shape[0], 1)
+        coref_logits_repeated = coref_logits.unsqueeze(0).repeat(real_cluster_target.shape[0], 1, 1)
+        cluster_logits_repeated = cluster_logits.unsqueeze(0).repeat(real_cluster_target.shape[0], 1, 1)
+        clamped_logits1 = (coref_logits_repeated[:,:,:-1] * cluster_logits_repeated).clamp(max=1.0)
+        cost_coref = torch.mean(F.binary_cross_entropy(clamped_logits1, \
+            cluster_repeated, reduction='none'), -1) + \
+                cluster_logits_repeated.squeeze(-1) * coref_logits_repeated[:,:, -1]
+        cost_coref = cost_coref.transpose(0,1)
 
         total_cost = self.cost_is_cluster * cost_is_cluster + self.cost_coref * cost_coref
         # total_cost = self.cost_coref * cost_coref

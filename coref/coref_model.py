@@ -6,7 +6,6 @@ import os
 import pickle
 import random
 import re
-import shutil
 from typing import Any, Dict, List, Optional, Set, Tuple
 import logging
 import wandb
@@ -211,8 +210,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         print("============ {data_split} EXAMPLES ============")
         print_predictions(all_gold_clusters, all_predicted_clusters, all_tokens, self.args.max_eval_print)
 
-        losses_parts = {key:np.average(losses_parts[key]) for key in losses_parts.keys()}
-        return (running_loss / len(docs), losses_parts, cluster_evaluator, mention_evaluator, men_prop_evaluator)
+        running_losses_parts = {key:running_losses_parts[key] / len(docs) for key in running_losses_parts.keys()}
+        return (running_loss / len(docs), running_losses_parts, cluster_evaluator, mention_evaluator, men_prop_evaluator)
 
     def load_weights(self,
                      path: Optional[str] = None,
@@ -424,7 +423,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                                     f"{self.config.section}"
                                     f"_e{prev_best_f1_epoch}.pt")
                 if prev_best_f1_epoch > -1 and os.path.exists(path_to_remove):
-                    shutil.rmtree(path_to_remove)
+                    os.remove(path_to_remove)
                     print(f'removed checkpoint with f1 {prev_best_f1} from {path_to_remove}')
                 else:
                     self.save_weights()
@@ -433,7 +432,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                                         f"{self.config.section}"
                                         f"_e{last_saved_epoch}.pt")
                     if last_saved_epoch > -1 and last_saved_epoch != best_f1_epoch and os.path.exists(path_to_remove):
-                        shutil.rmtree(path_to_remove)
+                        os.remove(path_to_remove)
                         print(f'removed previous checkpoint in epoch {last_saved_epoch}')
                     last_saved_epoch = epoch
             if not self.args.is_debug:
