@@ -48,7 +48,7 @@ if __name__ == "__main__":
     # os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     #adamw
     #word leve pruning instead of antecedent pruning?
-    ####speaker+genre in embed and then in text
+    ####speaker+genre in text
     #loadingmodel
     #different loss options (max,bce,div)
     ####self attn?
@@ -69,7 +69,7 @@ if __name__ == "__main__":
         wandb.init(project='coref-detr', entity='adizicher', name=args.run_name)
 
     if args.is_debug:
-        vis_devices="6"
+        vis_devices="7"
         if args.no_cuda:
             args.n_gpu = 0
         else:

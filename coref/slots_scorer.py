@@ -7,9 +7,12 @@ from torch.nn import init
 
 from coref import utils
 from coref.config import Config
+import copy
 
+def _get_clones(module, N):
+    return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
-class SlotsScorer(torch.nn.Module):
+class SlotsScorer(nn.Module):
     """ Calculates slots scores by passing the inputs into a slots attention """
     def __init__(self,
                  in_features: int,
@@ -29,6 +32,8 @@ class SlotsScorer(torch.nn.Module):
                            torch.nn.LeakyReLU(),
                            torch.nn.Dropout(config.dropout_rate)])
         self.hidden = torch.nn.Sequential(*layers)
+        self.word_self_attentions = _get_clones(nn.MultiheadAttention(hidden_size, 1), 3)
+
         self.slots_query_embed = nn.Embedding(num_queries, hidden_size)
         self.num_slots = self.num_queries
         self.slots_iters = 3
@@ -97,8 +102,10 @@ class SlotsScorer(torch.nn.Module):
         Returns:
             tensor of shape [batch_size, n_ants]
         """
-        x = self.hidden(x)
-        return x
+        x = self.hidden(x).unsqueeze(0)
+        for i in range(len(self.word_self_attentions)):
+            x = self.word_self_attentions[i](x, x, x)[0]
+        return x.squeeze(0)
 
     def _slot_attention(self, input_emb):
         _, _, emb, device = *input_emb.shape, input_emb.device

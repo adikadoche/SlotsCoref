@@ -43,7 +43,7 @@ class MatchingLoss(torch.nn.Module):
             self._create_gold_matrix(res, doc)
         # Retrieve the matching between the outputs of the last layer and the targets
         matched_predicted_cluster_id, matched_gold_cluster_id = \
-            self.matcher(coref_logits, res.cluster_logits, gold_matrix)
+            self.matcher(coref_logits, res, gold_matrix)
 
         costs_parts = {}
         # Compute the average number of target boxes accross all nodes, for normalization purposes
@@ -60,6 +60,7 @@ class MatchingLoss(torch.nn.Module):
         # junk_input = input_[res.coref_y == 0]
         # cost_is_mention =  self._bce_module(torch.clamp(gold_input, min=-50, max=50), torch.ones_like(gold_input)) + \
         #     self._bce_module(torch.clamp(junk_input, min=-50, max=50), torch.ones_like(junk_input))
+        cost_is_mention = res.cost_is_mention
 
         cost_coref = torch.tensor(0., device=coref_logits.device)
         cost_junk = torch.tensor(0., device=coref_logits.device)
@@ -73,7 +74,7 @@ class MatchingLoss(torch.nn.Module):
             junk_cluster_logits = cluster_logits[[x for x in range(coref_logits.shape[0]) if x not in matched_predicted_cluster_id.numpy()]]
             clamped_logits = (premuted_cluster_logits.unsqueeze(1) * permuted_coref_logits[:, :-1]).clamp(max=1.0)
             cost_coref = F.binary_cross_entropy(clamped_logits, permuted_gold, reduction='mean') + \
-                                                    torch.mean(permuted_coref_logits[:, -1] * premuted_cluster_logits)
+                          torch.mean(permuted_coref_logits[:, -1] * premuted_cluster_logits)
             clamped_junk_logits = (junk_cluster_logits.unsqueeze(1) * junk_coref_logits[:, :-1]).clamp(max=1.0)
             cost_junk = F.binary_cross_entropy(clamped_junk_logits, junk_gold, reduction='mean') + \
                                                     torch.mean(junk_coref_logits[:, -1] * junk_cluster_logits)
@@ -92,10 +93,11 @@ class MatchingLoss(torch.nn.Module):
         cost_junk += .5 * torch.sum(passed_thresh) / junkgold_denom  #TODO implement dbscan in predict clusters/slot attention?
 
         costs_parts['loss_is_cluster']= self.cost_is_cluster * cost_is_cluster.detach().cpu()
+        costs_parts['loss_is_mention']= self.cost_is_mention * cost_is_mention.detach().cpu()
         costs_parts['loss_coref'] = self.cost_coref * cost_coref.detach().cpu()
         costs_parts['loss_junk'] = self.cost_coref * cost_junk.detach().cpu()
         total_cost = self.cost_coref * cost_coref + self.cost_is_cluster * cost_is_cluster + \
-            self.cost_coref * cost_junk
+            self.cost_coref * cost_junk + self.cost_is_mention * cost_is_mention
         return total_cost, costs_parts
 
     def _create_gold_matrix(self, res, doc):
@@ -111,10 +113,10 @@ class MatchingLoss(torch.nn.Module):
                 assert word_index >= 0
                 gold_matrix[cluster_id, word_index] = 1
 
-        mentions_list = [gw for gc in res.word_clusters for gw in gc]
+        mentions_list = res.coref_indices
         junk_mentions_indices = torch.tensor([i for i, m in enumerate(mentions_list) if m not in gold_words], \
             dtype=torch.long, device=gold_matrix.device)
-        common_mentions = [m for m in mentions_list if m in gold_words]
+        common_mentions = [m.item() for m in mentions_list if m in gold_words]
 
         common_predict_ind = torch.zeros(len(common_mentions), dtype=torch.long, device=gold_matrix.device)
         common_gold_ind = torch.zeros(len(gold_words)+1, device=gold_matrix.device)
@@ -153,4 +155,5 @@ class MatchingLoss(torch.nn.Module):
         junkgold_dist_mask = junkgold_dist_mask * \
             ~(is_junk_mention.reshape(-1,1).repeat(1,dist_matrix.shape[1]) * \
                 is_junk_mention.reshape(1,-1).repeat(dist_matrix.shape[0],1))
-        return gold_matrix, new_coref_logits, dist_matrix, goldgold_dist_mask, junkgold_dist_mask
+        return gold_matrix, new_coref_logits, \
+            dist_matrix, goldgold_dist_mask, junkgold_dist_mask

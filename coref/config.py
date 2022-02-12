@@ -30,7 +30,7 @@ class Config:  # pylint: disable=too-many-instance-attributes, too-few-public-me
 
     max_span_len: int
 
-    rough_k: int
+    rough_k: float
 
     bert_finetune: bool
     dropout_rate: float

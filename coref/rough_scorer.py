@@ -2,11 +2,36 @@
 anaphoricity scores.
 """
 
-from typing import Tuple
+from typing import List, Tuple
 
 import torch
+from torch.nn import Module, Linear, LayerNorm, Dropout
+from transformers.models.bert.modeling_bert import ACT2FN
+import torch.nn.functional as F
 
 from coref.config import Config
+
+
+class FullyConnectedLayer(Module):
+    def __init__(self, config, input_dim, output_dim, dropout_prob=0.3):
+        super(FullyConnectedLayer, self).__init__()
+
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.dropout_prob = dropout_prob
+
+        self.dense = Linear(self.input_dim, self.output_dim)
+        self.layer_norm = LayerNorm(self.output_dim, eps=config.layer_norm_eps)
+        self.activation_func = ACT2FN[config.hidden_act]
+        self.dropout = Dropout(self.dropout_prob)
+
+    def forward(self, inputs):
+        temp = inputs
+        temp = self.dense(temp)
+        temp = self.activation_func(temp)
+        temp = self.layer_norm(temp)
+        temp = self.dropout(temp)
+        return temp
 
 
 class RoughScorer(torch.nn.Module):
@@ -15,47 +40,31 @@ class RoughScorer(torch.nn.Module):
     only top scoring candidates are considered on later steps to reduce
     computational complexity.
     """
-    def __init__(self, features: int, config: Config):
+    def __init__(self, config: Config, rough_k: float):
         super().__init__()
-        self.dropout = torch.nn.Dropout(config.dropout_rate)
-        self.bilinear = torch.nn.Linear(features, features)
-
-        self.k = config.rough_k
+        self.ffnn_size = 3072
+        self.mention_mlp = FullyConnectedLayer(config, config.hidden_size, self.ffnn_size)
+        self.mention_classifier = Linear(self.ffnn_size, 1)
+        self.k = rough_k
 
     def forward(self,  # type: ignore  # pylint: disable=arguments-differ  #35566 in pytorch
                 mentions: torch.Tensor,
-                ) -> Tuple[torch.Tensor, torch.Tensor]:
+                word_clusters: List
+                ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Returns rough anaphoricity scores for candidates, which consist of
         the bilinear output of the current model summed with mention scores.
         """
-        # [n_mentions, n_mentions]
-        pair_mask = torch.arange(mentions.shape[0])
-        pair_mask = pair_mask.unsqueeze(1) - pair_mask.unsqueeze(0)
-        pair_mask = torch.log((pair_mask > 0).to(torch.float))
-        pair_mask = pair_mask.to(mentions.device)
+        mention_reps = self.mention_mlp(mentions)
+        mention_logits = self.mention_classifier(mention_reps).squeeze(-1)
+        mention_logits = mention_logits.sigmoid()
+        top_scores, indices = torch.topk(mention_logits,
+                                         k=int(self.k * len(mention_logits)),
+                                         dim=0, sorted=False)
 
-        bilinear_scores = self.dropout(self.bilinear(mentions)).mm(mentions.T)
-
-        rough_scores = pair_mask + bilinear_scores
-
-        return self._prune(rough_scores)
-
-    def _prune(self,
-               rough_scores: torch.Tensor
-               ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Selects top-k rough antecedent scores for each mention.
-
-        Args:
-            rough_scores: tensor of shape [n_mentions, n_mentions], containing
-                rough antecedent scores of each mention-antecedent pair.
-
-        Returns:
-            FloatTensor of shape [n_mentions, k], top rough scores
-            LongTensor of shape [n_mentions, k], top indices
-        """
-        top_scores, indices = torch.topk(rough_scores,
-                                         k=min(self.k, len(rough_scores)),
-                                         dim=1, sorted=False)
-        return top_scores, indices
+        gold_indices = [gw for gc in word_clusters for gw in gc]
+        gold_probs = mention_logits[gold_indices]
+        junk_probs = mention_logits[[i for i in range(len(mention_logits)) if i not in gold_indices]]
+        cost_is_mention = F.binary_cross_entropy(gold_probs, torch.ones_like(gold_probs)) + \
+            F.binary_cross_entropy(junk_probs, torch.zeros_like(junk_probs))
+        return top_scores, indices, cost_is_mention
