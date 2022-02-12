@@ -132,6 +132,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         running_loss = 0.0
         s_correct = 0
         s_total = 0
+        running_losses_parts = {}
 
         all_gold_clusters = []
         all_predicted_clusters = []
@@ -143,7 +144,13 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         for doc in pbar:
             res = self.run(doc)
 
-            running_loss += self._coref_criterion(res.coref_scores, res.coref_y).item()
+            c_loss, cost_parts = self._coref_criterion(res, doc)
+            running_loss += c_loss.item()
+            for key in cost_parts.keys():
+                if key in running_losses_parts.keys():
+                    running_losses_parts[key] += cost_parts[key]
+                else:
+                    running_losses_parts[key] = cost_parts[key]
 
             if res.span_y:
                 pred_starts = res.span_scores[:, :, 0].argmax(dim=1)
@@ -204,7 +211,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         print("============ {data_split} EXAMPLES ============")
         print_predictions(all_gold_clusters, all_predicted_clusters, all_tokens, self.args.max_eval_print)
 
-        return (running_loss / len(docs), cluster_evaluator, mention_evaluator, men_prop_evaluator)
+        losses_parts = {key:np.average(losses_parts[key]) for key in losses_parts.keys()}
+        return (running_loss / len(docs), losses_parts, cluster_evaluator, mention_evaluator, men_prop_evaluator)
 
     def load_weights(self,
                      path: Optional[str] = None,
@@ -271,7 +279,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         # top_rough_scores, top_indices = self.rough_scorer(words)
 
         # Get pairwise features [n_words, n_ants, n_pw_features]
-        # pw = self.pw(top_indices, doc)
+        pw = self.pw(doc)
 
         # batch_size = self.config.a_scoring_batch_size
         # s_scores_lst: List[torch.Tensor] = []
@@ -286,7 +294,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             # a_scores_batch    [batch_size, n_ants]
         res = CorefResult()
         res.input_emb, res.cluster_logits, res.coref_logits = self.s_scorer(
-            all_mentions=words
+            all_mentions=torch.cat([words, pw], dim=-1)
         )
             # s_scores_lst.append((cluster_logits, coref_logits))
 
@@ -399,7 +407,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 global_step += 1
 
             logger.info("***** Running evaluation {} *****".format(str(self.epochs_trained)))
-            eval_loss, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
+            eval_loss, eval_losses_parts, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
                 self.evaluate(docs=eval_docs)
             eval_p, eval_r, eval_f1 = eval_cluster_evaluator.get_prf()
             eval_pm, eval_rm, eval_f1m = eval_men_evaluator.get_prf()
@@ -446,7 +454,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                     'mentions_recall': eval_rm,  
                     'mention_proposals_avg_f1': eval_f1mp,
                     'mention_proposals_precision': eval_pmp,
-                    'mention_proposals_recall': eval_rmp}
+                    'mention_proposals_recall': eval_rmp} | eval_losses_parts
             logger.info("***** Eval results {} *****".format(str(self.epochs_trained)))
             dict_to_log = {}
             for key, value in eval_results.items():
@@ -457,7 +465,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
             if self.epochs_trained % 3 == 0:
                 logger.info("***** Running Train evaluation {} *****".format(str(self.epochs_trained)))
-                _, train_cluster_evaluator, train_men_evaluator, train_men_prop_evaluator = \
+                _, _, train_cluster_evaluator, train_men_evaluator, train_men_prop_evaluator = \
                     self.evaluate(docs=train_docs, data_split='train')
                 train_p, train_r, train_f1 = train_cluster_evaluator.get_prf()
                 train_pm, train_rm, train_f1m = train_men_evaluator.get_prf()
@@ -510,11 +518,11 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         self.pw = PairwiseEncoder(self.config).to(self.device)
 
         bert_emb = self.bert.config.hidden_size
-        pair_emb = bert_emb * 3 + self.pw.shape
+        pair_emb = bert_emb + self.pw.shape
 
         # pylint: disable=line-too-long
         self.s_scorer = SlotsScorer(\
-            bert_emb, self.config, self.args.num_queries+self.args.num_junk_queries,\
+            pair_emb, self.config, self.args.num_queries+self.args.num_junk_queries,\
                 self.args.random_queries).to(self.device)
         self.we = WordEncoder(bert_emb, self.config).to(self.device)
         self.rough_scorer = RoughScorer(bert_emb, self.config).to(self.device)

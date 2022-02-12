@@ -46,16 +46,12 @@ def seed(value: int) -> None:
 if __name__ == "__main__":
 
     # os.environ["CUDA_VISIBLE_DEVICES"] = "5"
-    #wandb
     #adamw
     #word leve pruning instead of antecedent pruning?
-    #speaker+genre in text
+    ####speaker+genre in embed and then in text
     #loadingmodel
-    #slots params
-    #slots algo
     #different loss options (max,bce,div)
-    #more loss terms
-    #self attn?
+    ####self attn?
     args = parse_args()
     if args.warm_start and args.weights is not None:
         print("The following options are incompatible:"
@@ -73,7 +69,7 @@ if __name__ == "__main__":
         wandb.init(project='coref-detr', entity='adizicher', name=args.run_name)
 
     if args.is_debug:
-        vis_devices="5"
+        vis_devices="6"
         if args.no_cuda:
             args.n_gpu = 0
         else:
