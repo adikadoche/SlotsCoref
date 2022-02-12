@@ -63,8 +63,10 @@ class RoughScorer(torch.nn.Module):
                                          dim=0, sorted=False)
 
         gold_indices = [gw for gc in word_clusters for gw in gc]
-        gold_probs = mention_logits[gold_indices]
+        cost_is_mention = torch.tensor(0., device=mention_logits.device)
+        if len(gold_indices) > 0:
+            gold_probs = mention_logits[gold_indices]
+            cost_is_mention = F.binary_cross_entropy(gold_probs, torch.ones_like(gold_probs))
         junk_probs = mention_logits[[i for i in range(len(mention_logits)) if i not in gold_indices]]
-        cost_is_mention = F.binary_cross_entropy(gold_probs, torch.ones_like(gold_probs)) + \
-            F.binary_cross_entropy(junk_probs, torch.zeros_like(junk_probs))
+        cost_is_mention += F.binary_cross_entropy(junk_probs, torch.zeros_like(junk_probs))
         return top_scores, indices, cost_is_mention
