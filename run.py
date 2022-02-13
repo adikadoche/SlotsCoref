@@ -71,7 +71,7 @@ if __name__ == "__main__":
         wandb.init(project='coref-detr', entity='adizicher', name=args.run_name)
 
     if args.is_debug:
-        vis_devices="5"
+        vis_devices="7"
         if args.no_cuda:
             args.n_gpu = 0
         else:
@@ -120,6 +120,8 @@ if __name__ == "__main__":
         model.load_weights(path=args.weights, map_location="cpu",
                            ignore={"bert_optimizer", "general_optimizer",
                                    "bert_scheduler", "general_scheduler"})
+        sp_state_dict = torch.load('sp_trained.pt', map_location='cpu')['sp']
+        model.trainable['sp'].load_state_dict(sp_state_dict)
         eval_loss, eval_losses_parts, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
             model.evaluate(data_split=args.data_split, word_level_conll=args.word_level)
         eval_p, eval_r, eval_f1 = eval_cluster_evaluator.get_prf()
