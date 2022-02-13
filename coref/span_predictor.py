@@ -117,7 +117,7 @@ class SpanPredictor(torch.nn.Module):
         """ Returns span starts/ends for gold mentions in the document. """
         head2span = sorted(doc["head2span"])
         if not head2span:
-            return None, None
+            return self(doc, words, sorted_mentions), None, None
         heads, starts, ends = zip(*head2span)
         heads = torch.tensor(heads, device=self.device)
         starts = torch.tensor(starts, device=self.device)

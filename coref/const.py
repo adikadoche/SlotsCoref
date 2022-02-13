@@ -28,6 +28,7 @@ class CorefResult:
     cost_is_mention: torch.Tensor = None                  # [n_words, k + 1]
     coref_indices: torch.Tensor = None                  # [n_words, k + 1]
     coref_y: torch.Tensor = None                       # [n_words, k + 1]
+    mentions_scores: torch.Tensor = None                       # [n_words, k + 1]
 
     word_clusters: List[List[int]] = None
     span_clusters: List[List[Span]] = None
