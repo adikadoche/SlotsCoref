@@ -297,7 +297,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         res.input_emb, res.cluster_logits, res.coref_logits = self.s_scorer(
             all_mentions=torch.cat([words, pw], dim=-1)[top_indices]
         )
-        res.coref_logits = res.coref_logits * top_rough_scores.unsqueeze(0)
+        # res.coref_logits = res.coref_logits * top_rough_scores.unsqueeze(0)
         res.coref_indices = top_indices
         res.cost_is_mention = cost_is_mention
             # s_scores_lst.append((cluster_logits, coref_logits))

@@ -47,7 +47,8 @@ if __name__ == "__main__":
 
     # os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     #vladmir limits something in sentence to one? and Im not?
-    #train cluster every 3
+    #parameters to args
+    #eval train after loop
     #maybe add mention score rather than mult
     #adamw
     ####speaker+genre in text
