@@ -40,12 +40,12 @@ class RoughScorer(torch.nn.Module):
     only top scoring candidates are considered on later steps to reduce
     computational complexity.
     """
-    def __init__(self, config: Config, rough_k: float):
+    def __init__(self, config: Config, topk_lambda: float):
         super().__init__()
         self.ffnn_size = 3072
         self.mention_mlp = FullyConnectedLayer(config, config.hidden_size, self.ffnn_size)
         self.mention_classifier = Linear(self.ffnn_size, 1)
-        self.k = rough_k
+        self.k = topk_lambda
 
     def forward(self,  # type: ignore  # pylint: disable=arguments-differ  #35566 in pytorch
                 mentions: torch.Tensor,

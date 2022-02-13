@@ -297,7 +297,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         res.input_emb, res.cluster_logits, res.coref_logits = self.s_scorer(
             all_mentions=torch.cat([words, pw], dim=-1)[top_indices]
         )
-        # res.coref_logits = res.coref_logits * top_rough_scores.unsqueeze(0)
+        res.coref_logits = res.coref_logits * top_rough_scores.unsqueeze(0)
         res.coref_indices = top_indices
         res.cost_is_mention = cost_is_mention
             # s_scores_lst.append((cluster_logits, coref_logits))
@@ -562,7 +562,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             pair_emb, self.config, self.args.num_queries+self.args.num_junk_queries,\
                 self.args.random_queries).to(self.device)
         self.we = WordEncoder(bert_emb, self.config).to(self.device)
-        self.rough_scorer = RoughScorer(self.bert.config, self.config.rough_k).to(self.device)
+        self.rough_scorer = RoughScorer(self.bert.config, self.config.topk_lambda).to(self.device)
         self.sp = SpanPredictor(bert_emb, self.config.sp_embedding_size).to(self.device)
 
         self.trainable: Dict[str, torch.nn.Module] = {
