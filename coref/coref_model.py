@@ -273,6 +273,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         # words           [n_words, span_emb]
         # cluster_ids     [n_words]
         words, cluster_ids = self.we(doc, self._bertify(doc))
+        res = CorefResult()
+        res.span_scores, res.span_y = self.sp.get_training_data(doc, words)
 
         # Obtain bilinear scores and leave only top-k antecedents for each word
         # top_rough_scores  [n_words, n_ants]
@@ -293,7 +295,6 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             # top_rough_scores_batch = top_rough_scores[i:i + batch_size]
 
             # a_scores_batch    [batch_size, n_ants]
-        res = CorefResult()
         res.input_emb, res.cluster_logits, res.coref_logits = self.s_scorer(
             all_mentions=torch.cat([words, pw], dim=-1)[top_indices]
         )
@@ -304,7 +305,6 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
         # coref_scores  [n_spans, n_ants]
         # res.coref_scores = torch.cat(s_scores_lst, dim=0)
-        res.span_scores, res.span_y = self.sp.get_training_data(doc, words)
 
         # res.coref_y = self._get_ground_truth(
         #     cluster_ids, top_indices, (top_rough_scores > float("-inf")))
