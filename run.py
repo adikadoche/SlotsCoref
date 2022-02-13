@@ -48,12 +48,9 @@ if __name__ == "__main__":
     # os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     #vladmir limits something in sentence to one? and Im not?
     #train cluster every 3
-    #menprop evaluation calc
     #maybe add mention score rather than mult
     #adamw
-    #word leve pruning instead of antecedent pruning?
     ####speaker+genre in text
-    #loadingmodel
     #different loss options (max,bce,div)
     ####self attn?
     args = parse_args()

@@ -470,6 +470,23 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             eval_p, eval_r, eval_f1 = eval_cluster_evaluator.get_prf()
             eval_pm, eval_rm, eval_f1m = eval_men_evaluator.get_prf()
             eval_pmp, eval_rmp, eval_f1mp = eval_men_prop_evaluator.get_prf()
+            eval_results = {'loss': eval_loss,
+                    'avg_f1': eval_f1,
+                    'precision': eval_p,
+                    'recall': eval_r,  
+                    'mentions_avg_f1': eval_f1m,
+                    'mentions_precision': eval_pm,
+                    'mentions_recall': eval_rm,  
+                    'mention_proposals_avg_f1': eval_f1mp,
+                    'mention_proposals_precision': eval_pmp,
+                    'mention_proposals_recall': eval_rmp} | eval_losses_parts
+            logger.info("***** Eval results {} *****".format(str(self.epochs_trained)))
+            dict_to_log = {}
+            for key, value in eval_results.items():
+                dict_to_log['eval_{}'.format(key)] = value
+                logger.info("eval %s = %s" % (key, str(eval_results[key])))
+            if not self.args.is_debug:
+                wandb.log(dict_to_log, step=global_step)
             if eval_f1 > best_f1:
                 prev_best_f1 = best_f1
                 prev_best_f1_epoch = best_f1_epoch
@@ -503,23 +520,6 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                                 f"_e{best_f1_epoch}.pt")}, step=global_step)
                 except:
                     pass
-            eval_results = {'loss': eval_loss,
-                    'avg_f1': eval_f1,
-                    'precision': eval_p,
-                    'recall': eval_r,  
-                    'mentions_avg_f1': eval_f1m,
-                    'mentions_precision': eval_pm,
-                    'mentions_recall': eval_rm,  
-                    'mention_proposals_avg_f1': eval_f1mp,
-                    'mention_proposals_precision': eval_pmp,
-                    'mention_proposals_recall': eval_rmp} | eval_losses_parts
-            logger.info("***** Eval results {} *****".format(str(self.epochs_trained)))
-            dict_to_log = {}
-            for key, value in eval_results.items():
-                dict_to_log['eval_{}'.format(key)] = value
-                logger.info("eval %s = %s" % (key, str(eval_results[key])))
-            if not self.args.is_debug:
-                wandb.log(dict_to_log, step=global_step)
 
             self.epochs_trained += 1
 
