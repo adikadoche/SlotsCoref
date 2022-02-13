@@ -274,7 +274,6 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         # cluster_ids     [n_words]
         words, cluster_ids = self.we(doc, self._bertify(doc))
         res = CorefResult()
-        res.span_scores, res.span_y = self.sp.get_training_data(doc, words)
 
         # Obtain bilinear scores and leave only top-k antecedents for each word
         # top_rough_scores  [n_words, n_ants]
@@ -295,8 +294,15 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             # top_rough_scores_batch = top_rough_scores[i:i + batch_size]
 
             # a_scores_batch    [batch_size, n_ants]
+        res.mentions_scores, res.span_scores, res.span_y = \
+            self.sp.get_training_predict(doc, words, top_indices)
+        mentions = words[top_indices]
+        start_mentions = torch.matmul(res.mentions_scores[:,:,0].softmax(1), words)
+        end_mentions = torch.matmul(res.mentions_scores[:,:,1].softmax(1), words)
+        span_reps = torch.cat([mentions, start_mentions, end_mentions, pw[top_indices]], dim=-1)
+
         res.input_emb, res.cluster_logits, res.coref_logits = self.s_scorer(
-            all_mentions=torch.cat([words, pw], dim=-1)[top_indices]
+            all_mentions=span_reps
         )
         # res.coref_logits = res.coref_logits * top_rough_scores.unsqueeze(0)
         res.coref_indices = top_indices
@@ -555,7 +561,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         self.pw = PairwiseEncoder(self.config).to(self.device)
 
         bert_emb = self.bert.config.hidden_size
-        pair_emb = bert_emb + self.pw.shape
+        pair_emb = bert_emb * 3 + self.pw.shape
 
         # pylint: disable=line-too-long
         self.s_scorer = SlotsScorer(\
