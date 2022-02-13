@@ -64,7 +64,7 @@ def coref_pprint(tokens, clusters, correct_flags=None, partial_cluster_to_color=
         for c in clusters:
             for start, end in c:
                 if start == i:
-                    mentions_start_at_i.append((end, c))
+                    mentions_start_at_i.append((end-1, c))
 
         mentions_start_at_i = sorted(mentions_start_at_i, reverse=True)
         if mentions_start_at_i:
@@ -79,7 +79,14 @@ def coref_pprint(tokens, clusters, correct_flags=None, partial_cluster_to_color=
         pretty_str += t + u' '
 
         # count how many mentions end at i
-        mentions_end_at_i_count = len(list(_ for c in clusters for start, end in c if i == end))
+        try:
+            mentions_end_at_i_count = len(list(_ for c in clusters for start, end in c if i == end-1))
+        except Exception as e:
+            print(
+                "Got an exception. {}".format(repr(e)))
+            print(clusters)
+            print(i)
+
         if mentions_end_at_i_count > 0:
             # pop them out of color stack
             color_stack = color_stack[:-mentions_end_at_i_count]
@@ -355,73 +362,73 @@ def print_predictions(all_gold_clusters, all_predicted_clusters, all_tokens, max
     print("{}% excess pronouns".format(0 if count_excess_mentions == 0 else 1. * count_excess_pronous / count_excess_mentions * 100))
 
 
-def error_analysis(all_cluster_logits, all_coref_logits, all_mention_logits, all_gold_clusters, all_gold_mentions, all_input_ids, coref_threshold, cluster_threshold, slots):
-    total_sub_clusters_gold = 0
-    total_sub_clusters_pred = 0
-    total_num_gold_clusters_in_one_pred_cluster = 0
-    total_num_pred_clusters_in_one_gold_cluster = 0
-    total_sum_num_split_gold_clusters = 0
-    total_sum_num_split_pred_clusters = 0
-    total_sum_biggest_prec_gold_cluster_in_pred_cluster = 0
-    total_sum_biggest_prec_pred_cluster_in_gold_cluster = 0
+# def error_analysis(all_cluster_logits, all_coref_logits, all_mention_logits, all_gold_clusters, all_gold_mentions, all_input_ids, coref_threshold, cluster_threshold, slots):
+#     total_sub_clusters_gold = 0
+#     total_sub_clusters_pred = 0
+#     total_num_gold_clusters_in_one_pred_cluster = 0
+#     total_num_pred_clusters_in_one_gold_cluster = 0
+#     total_sum_num_split_gold_clusters = 0
+#     total_sum_num_split_pred_clusters = 0
+#     total_sum_biggest_prec_gold_cluster_in_pred_cluster = 0
+#     total_sum_biggest_prec_pred_cluster_in_gold_cluster = 0
 
-    for i in range(len(all_input_ids)):
-        gold_clusters = all_gold_clusters[i]
-        gold_mentions = all_gold_mentions[i]
-        cluster_logits, coref_logits, mention_logits = all_cluster_logits[i], all_coref_logits[i], []
-        if len(all_mention_logits) > 0:
-            mention_logits = all_mention_logits[i]
-            predicted_clusters = calc_predicted_clusters(cluster_logits.cpu().detach().unsqueeze(0), coref_logits.cpu().detach().unsqueeze(0), mention_logits.cpu().detach().unsqueeze(0),
-                                                            coref_threshold, cluster_threshold, [gold_mentions], slots)
-        else:
-            predicted_clusters = calc_predicted_clusters(cluster_logits.cpu().detach().unsqueeze(0), coref_logits.cpu().detach().unsqueeze(0), [],
-                                                            coref_threshold, cluster_threshold, [gold_mentions], slots)
+#     for i in range(len(all_input_ids)):
+#         gold_clusters = all_gold_clusters[i]
+#         gold_mentions = all_gold_mentions[i]
+#         cluster_logits, coref_logits, mention_logits = all_cluster_logits[i], all_coref_logits[i], []
+#         if len(all_mention_logits) > 0:
+#             mention_logits = all_mention_logits[i]
+#             predicted_clusters = calc_predicted_clusters(cluster_logits.cpu().detach().unsqueeze(0), coref_logits.cpu().detach().unsqueeze(0), mention_logits.cpu().detach().unsqueeze(0),
+#                                                             coref_threshold, cluster_threshold, [gold_mentions], slots)
+#         else:
+#             predicted_clusters = calc_predicted_clusters(cluster_logits.cpu().detach().unsqueeze(0), coref_logits.cpu().detach().unsqueeze(0), [],
+#                                                             coref_threshold, cluster_threshold, [gold_mentions], slots)
 
-        num_gold_clusters_in_one_pred_cluster, num_pred_clusters_in_one_gold_cluster, \
-        sum_num_split_gold_clusters, sum_num_split_pred_clusters, sum_biggest_prec_gold_cluster_in_pred_cluster, \
-            sum_biggest_prec_pred_cluster_in_gold_cluster, total_gold_clusters, total_pred_clusters = clusters_error_analysis(
-            gold_clusters, predicted_clusters[0])
-        total_sub_clusters_gold += total_gold_clusters
-        total_sub_clusters_pred += total_pred_clusters
-        total_num_gold_clusters_in_one_pred_cluster += num_gold_clusters_in_one_pred_cluster
-        total_num_pred_clusters_in_one_gold_cluster += num_pred_clusters_in_one_gold_cluster
-        total_sum_num_split_gold_clusters += sum_num_split_gold_clusters
-        total_sum_num_split_pred_clusters += sum_num_split_pred_clusters
-        total_sum_biggest_prec_gold_cluster_in_pred_cluster += sum_biggest_prec_gold_cluster_in_pred_cluster
-        total_sum_biggest_prec_pred_cluster_in_gold_cluster += sum_biggest_prec_pred_cluster_in_gold_cluster
+#         num_gold_clusters_in_one_pred_cluster, num_pred_clusters_in_one_gold_cluster, \
+#         sum_num_split_gold_clusters, sum_num_split_pred_clusters, sum_biggest_prec_gold_cluster_in_pred_cluster, \
+#             sum_biggest_prec_pred_cluster_in_gold_cluster, total_gold_clusters, total_pred_clusters = clusters_error_analysis(
+#             gold_clusters, predicted_clusters[0])
+#         total_sub_clusters_gold += total_gold_clusters
+#         total_sub_clusters_pred += total_pred_clusters
+#         total_num_gold_clusters_in_one_pred_cluster += num_gold_clusters_in_one_pred_cluster
+#         total_num_pred_clusters_in_one_gold_cluster += num_pred_clusters_in_one_gold_cluster
+#         total_sum_num_split_gold_clusters += sum_num_split_gold_clusters
+#         total_sum_num_split_pred_clusters += sum_num_split_pred_clusters
+#         total_sum_biggest_prec_gold_cluster_in_pred_cluster += sum_biggest_prec_gold_cluster_in_pred_cluster
+#         total_sum_biggest_prec_pred_cluster_in_gold_cluster += sum_biggest_prec_pred_cluster_in_gold_cluster
 
-    num1 = total_num_gold_clusters_in_one_pred_cluster * 100.0 / total_sub_clusters_gold if \
-        total_sub_clusters_gold > 0 else 0
-    num2 = total_num_pred_clusters_in_one_gold_cluster * 100.0 / total_sub_clusters_pred if \
-        total_sub_clusters_pred > 0 else 0
-    num3 = total_sum_num_split_gold_clusters * 1.0 / (total_sub_clusters_gold-total_num_gold_clusters_in_one_pred_cluster) if \
-        total_sub_clusters_gold > total_num_gold_clusters_in_one_pred_cluster else 0
-    num4 = (total_sum_num_split_gold_clusters+total_num_gold_clusters_in_one_pred_cluster) * 1.0 / total_sub_clusters_gold if \
-        total_sub_clusters_gold > 0 else 0
-    num5 = total_sum_num_split_pred_clusters * 1.0 / (total_sub_clusters_pred-total_num_pred_clusters_in_one_gold_cluster) if \
-        total_sub_clusters_pred > total_num_pred_clusters_in_one_gold_cluster else 0
-    num6 = (total_sum_num_split_pred_clusters+total_num_pred_clusters_in_one_gold_cluster) * 1.0 / total_sub_clusters_pred if \
-        total_sub_clusters_pred > 0 else 0
-    num7 = total_sum_biggest_prec_gold_cluster_in_pred_cluster * 100.0 / (total_sub_clusters_gold-total_num_gold_clusters_in_one_pred_cluster) if \
-        total_sub_clusters_gold > total_num_gold_clusters_in_one_pred_cluster else 0
-    num8 = (total_sum_biggest_prec_gold_cluster_in_pred_cluster+total_num_gold_clusters_in_one_pred_cluster) * 100.0 / total_sub_clusters_gold if \
-        total_sub_clusters_gold > 0 else 0
-    num9 = total_sum_biggest_prec_pred_cluster_in_gold_cluster * 100.0 / (total_sub_clusters_pred-total_num_pred_clusters_in_one_gold_cluster) if \
-        total_sub_clusters_pred > total_num_pred_clusters_in_one_gold_cluster else 0
-    num10 = (total_sum_biggest_prec_pred_cluster_in_gold_cluster+total_num_pred_clusters_in_one_gold_cluster) * 100.0 / total_sub_clusters_pred if \
-        total_sub_clusters_pred > 0 else 0
+#     num1 = total_num_gold_clusters_in_one_pred_cluster * 100.0 / total_sub_clusters_gold if \
+#         total_sub_clusters_gold > 0 else 0
+#     num2 = total_num_pred_clusters_in_one_gold_cluster * 100.0 / total_sub_clusters_pred if \
+#         total_sub_clusters_pred > 0 else 0
+#     num3 = total_sum_num_split_gold_clusters * 1.0 / (total_sub_clusters_gold-total_num_gold_clusters_in_one_pred_cluster) if \
+#         total_sub_clusters_gold > total_num_gold_clusters_in_one_pred_cluster else 0
+#     num4 = (total_sum_num_split_gold_clusters+total_num_gold_clusters_in_one_pred_cluster) * 1.0 / total_sub_clusters_gold if \
+#         total_sub_clusters_gold > 0 else 0
+#     num5 = total_sum_num_split_pred_clusters * 1.0 / (total_sub_clusters_pred-total_num_pred_clusters_in_one_gold_cluster) if \
+#         total_sub_clusters_pred > total_num_pred_clusters_in_one_gold_cluster else 0
+#     num6 = (total_sum_num_split_pred_clusters+total_num_pred_clusters_in_one_gold_cluster) * 1.0 / total_sub_clusters_pred if \
+#         total_sub_clusters_pred > 0 else 0
+#     num7 = total_sum_biggest_prec_gold_cluster_in_pred_cluster * 100.0 / (total_sub_clusters_gold-total_num_gold_clusters_in_one_pred_cluster) if \
+#         total_sub_clusters_gold > total_num_gold_clusters_in_one_pred_cluster else 0
+#     num8 = (total_sum_biggest_prec_gold_cluster_in_pred_cluster+total_num_gold_clusters_in_one_pred_cluster) * 100.0 / total_sub_clusters_gold if \
+#         total_sub_clusters_gold > 0 else 0
+#     num9 = total_sum_biggest_prec_pred_cluster_in_gold_cluster * 100.0 / (total_sub_clusters_pred-total_num_pred_clusters_in_one_gold_cluster) if \
+#         total_sub_clusters_pred > total_num_pred_clusters_in_one_gold_cluster else 0
+#     num10 = (total_sum_biggest_prec_pred_cluster_in_gold_cluster+total_num_pred_clusters_in_one_gold_cluster) * 100.0 / total_sub_clusters_pred if \
+#         total_sub_clusters_pred > 0 else 0
         
-    print("{}% gold clusters who went to one pred cluster".format(num1))
-    print("{}% pred clusters who containes one gold cluster".format(num2))
-    print("{} avg amount of clusters that one gold cluster split to (without clusters who didnt split)".format(num3))
-    print("{} avg amount of clusters that one gold cluster split to (with clusters who didnt split)".format(num4))
-    print("{} avg amount of gold clusters that one pred cluster containes (without clusters who didnt split)".format(num5))
-    print("{} avg amount of gold clusters that one pred cluster containes (with clusters who didnt split)".format(num6))
-    print("{}% avg size of biggest sub cluster in gold which is together in pred (without clusters who didnt split)".format(num7)) #TODO: wierd numbers
-    print("{}% avg size of biggest sub cluster in gold which is together in pred (with clusters who didnt split)".format(num8)) #TODO: wierd numbers
-    print("{}% avg size of biggest sub cluster in pred which is together in gold (without clusters who didnt split)".format(num9)) #TODO: wierd numbers
-    print("{}% avg size of biggest sub cluster in pred which is together in gold (with clusters who didnt split)".format(num10)) #TODO: wierd numbers
-    return num1, num2, num3, num4, num5, num6, num7, num8, num9, num10
+#     print("{}% gold clusters who went to one pred cluster".format(num1))
+#     print("{}% pred clusters who containes one gold cluster".format(num2))
+#     print("{} avg amount of clusters that one gold cluster split to (without clusters who didnt split)".format(num3))
+#     print("{} avg amount of clusters that one gold cluster split to (with clusters who didnt split)".format(num4))
+#     print("{} avg amount of gold clusters that one pred cluster containes (without clusters who didnt split)".format(num5))
+#     print("{} avg amount of gold clusters that one pred cluster containes (with clusters who didnt split)".format(num6))
+#     print("{}% avg size of biggest sub cluster in gold which is together in pred (without clusters who didnt split)".format(num7)) #TODO: wierd numbers
+#     print("{}% avg size of biggest sub cluster in gold which is together in pred (with clusters who didnt split)".format(num8)) #TODO: wierd numbers
+#     print("{}% avg size of biggest sub cluster in pred which is together in gold (without clusters who didnt split)".format(num9)) #TODO: wierd numbers
+#     print("{}% avg size of biggest sub cluster in pred which is together in gold (with clusters who didnt split)".format(num10)) #TODO: wierd numbers
+#     return num1, num2, num3, num4, num5, num6, num7, num8, num9, num10
 
 
 def create_mention_to_cluster_mapping(mentions, clusters):

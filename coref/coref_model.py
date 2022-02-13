@@ -124,7 +124,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         if docs is None:
             docs = self._get_docs(self.config.__dict__[f"predict_file"])            
         cluster_evaluator = CorefEvaluator()
-        mention_evaluator = CorefEvaluator()
+        mention_evaluator = MentionEvaluator()
         men_prop_evaluator = MentionEvaluator()
         # w_checker = ClusterChecker()
         # s_checker = ClusterChecker()
@@ -155,8 +155,10 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 pred_starts = res.span_scores[:, :, 0].argmax(dim=1)
                 pred_ends = res.span_scores[:, :, 1].argmax(dim=1)
                 # men propos scores
-                men_prop_evaluator.update([(pred_starts[i].item(), pred_ends[i].item()) for i in range(len(pred_starts))], \
-                    [(res.span_y[0][i].item(), res.span_y[1][i].item()) for i in range(len(res.span_y[0]))])
+                men_prop_evaluator.update([(res.coref_indices[i].item(), res.coref_indices[i].item()) \
+                    for i in range(len(res.coref_indices))],\
+                    [(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for i in range(len(doc['word_clusters'])) for j in \
+                range(len(doc['word_clusters'][i]))])
                 s_correct += ((res.span_y[0] == pred_starts) * (res.span_y[1] == pred_ends)).sum().item()
                 s_total += len(pred_starts)
 
@@ -179,11 +181,11 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
             # final scores
             # s_checker.add_predictions(doc["span_clusters"], res.span_clusters)
-            cluster_evaluator.update([doc["span_clusters"]], [res.span_clusters])
-            mention_evaluator.update([[[(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for j in \
-                range(len(doc['word_clusters'][i]))] for i in range(len(doc['word_clusters']))]], \
-                    [[[(res.word_clusters[i][j],res.word_clusters[i][j]) for j in \
-                range(len(res.word_clusters[i]))] for i in range(len(res.word_clusters))]])
+            cluster_evaluator.update([res.span_clusters] ,[doc["span_clusters"]])
+            mention_evaluator.update([(res.word_clusters[i][j],res.word_clusters[i][j]) \
+                for i in range(len(res.word_clusters)) for j in range(len(res.word_clusters[i]))], \
+                    [(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for i in range(len(doc['word_clusters']))\
+                        for j in range(len(doc['word_clusters'][i]))])
             # s_lea = s_checker.total_lea
 
             all_predicted_clusters.append(res.span_clusters)
@@ -207,7 +209,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             # )
         print()
 
-        print("============ {data_split} EXAMPLES ============")
+        print(f"============ {data_split} EXAMPLES ============")
         print_predictions(all_gold_clusters, all_predicted_clusters, all_tokens, self.args.max_eval_print)
 
         running_losses_parts = {key:running_losses_parts[key] / len(docs) for key in running_losses_parts.keys()}
@@ -255,7 +257,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 print(f"Loaded {key}")
 
     def run(self,  # pylint: disable=too-many-locals
-            doc: Doc,
+            doc: Doc, epoch=0
             ) -> CorefResult:
         """
         This is a massive method, but it made sense to me to not split it into
@@ -295,24 +297,25 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         res.input_emb, res.cluster_logits, res.coref_logits = self.s_scorer(
             all_mentions=torch.cat([words, pw], dim=-1)[top_indices]
         )
-        res.coref_logits = res.coref_logits * top_rough_scores.unsqueeze(0)
+        # res.coref_logits = res.coref_logits * top_rough_scores.unsqueeze(0)
         res.coref_indices = top_indices
         res.cost_is_mention = cost_is_mention
             # s_scores_lst.append((cluster_logits, coref_logits))
 
         # coref_scores  [n_spans, n_ants]
         # res.coref_scores = torch.cat(s_scores_lst, dim=0)
+        res.span_scores, res.span_y = self.sp.get_training_data(doc, words)
 
         # res.coref_y = self._get_ground_truth(
         #     cluster_ids, top_indices, (top_rough_scores > float("-inf")))
-        res.word_clusters = self._clusterize_slots(res.cluster_logits.cpu().detach(), \
-            res.coref_logits.cpu().detach(), top_indices)
-        # res.word_clusters = self._clusterize(doc, s_scores_lst,
-        #                                      top_indices)
-        res.span_scores, res.span_y = self.sp.get_training_data(doc, words)
+        if epoch % 3 == 2 or not self.training:
+            res.word_clusters = self._clusterize_slots(res.cluster_logits.cpu().detach(), \
+                res.coref_logits.cpu().detach(), top_indices)
+            # res.word_clusters = self._clusterize(doc, s_scores_lst,
+            #                                      top_indices)
 
-        # if not self.training:
-        res.span_clusters = self.sp.predict(doc, words, res.word_clusters)
+            # if not self.training:
+            res.span_clusters = self.sp.predict(doc, words, res.word_clusters)
 
         return res
 
@@ -353,7 +356,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             running_s_loss = 0.0
             random.shuffle(docs_ids)
             train_cluster_evaluator = CorefEvaluator()
-            train_mention_evaluator = CorefEvaluator()
+            train_mention_evaluator = MentionEvaluator()
             train_men_prop_evaluator = MentionEvaluator()
             all_gold_clusters = []
             all_predicted_clusters = []
@@ -367,7 +370,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 for optim in self.optimizers.values():
                     optim.zero_grad()
 
-                res = self.run(doc)
+                res = self.run(doc, epoch)
 
                 c_loss, cost_parts = self._coref_criterion(res, doc)
                 if res.span_y:
@@ -377,25 +380,28 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                     s_loss = torch.zeros_like(c_loss)
                 cost_parts['loss_span'] = 3 * s_loss.detach().cpu()
 
-                if res.span_y:
-                    pred_starts = res.span_scores[:, :, 0].argmax(dim=1)
-                    pred_ends = res.span_scores[:, :, 1].argmax(dim=1)
-                    # men propos scores
-                    train_men_prop_evaluator.update([(pred_starts[i].item(), pred_ends[i].item()) for i in range(len(pred_starts))], \
-                        [(res.span_y[0][i].item(), res.span_y[1][i].item()) for i in range(len(res.span_y[0]))])
+                if epoch % 3 == 2: 
+                    if res.span_y:
+                        pred_starts = res.span_scores[:, :, 0].argmax(dim=1)
+                        pred_ends = res.span_scores[:, :, 1].argmax(dim=1)
+                        # men propos scores
+                        train_men_prop_evaluator.update([(res.coref_indices[i].item(), res.coref_indices[i].item()) \
+                            for i in range(len(res.coref_indices))],\
+                            [(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for i in range(len(doc['word_clusters'])) for j in \
+                        range(len(doc['word_clusters'][i]))])
 
-                # final scores
-                # s_checker.add_predictions(doc["span_clusters"], res.span_clusters)
-                train_cluster_evaluator.update([doc["span_clusters"]], [res.span_clusters])
-                train_mention_evaluator.update([[[(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for j in \
-                    range(len(doc['word_clusters'][i]))] for i in range(len(doc['word_clusters']))]], \
-                        [[[(res.word_clusters[i][j],res.word_clusters[i][j]) for j in \
-                    range(len(res.word_clusters[i]))] for i in range(len(res.word_clusters))]])
-                # s_lea = s_checker.total_lea
+                    # final scores
+                    # s_checker.add_predictions(doc["span_clusters"], res.span_clusters)
+                    train_cluster_evaluator.update([res.span_clusters], [doc["span_clusters"]])
+                    train_mention_evaluator.update([(res.word_clusters[i][j],res.word_clusters[i][j]) \
+                        for i in range(len(res.word_clusters)) for j in range(len(res.word_clusters[i]))], \
+                            [(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for i in range(len(doc['word_clusters']))\
+                                for j in range(len(doc['word_clusters'][i]))])
+                    # s_lea = s_checker.total_lea
 
-                all_predicted_clusters.append(res.span_clusters)
-                all_gold_clusters.append(doc["span_clusters"])
-                all_tokens.append(doc["cased_words"])
+                    all_predicted_clusters.append(res.span_clusters)
+                    all_gold_clusters.append(doc["span_clusters"])
+                    all_tokens.append(doc["cased_words"])
 
                 del res
 
@@ -437,25 +443,26 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 
                 global_step += 1
 
-            print("============ TRAIN EXAMPLES ============")
-            print_predictions(all_gold_clusters, all_predicted_clusters, all_tokens, self.args.max_eval_print)
-            train_p, train_r, train_f1 = train_cluster_evaluator.get_prf()
-            train_pm, train_rm, train_f1m = train_mention_evaluator.get_prf()
-            train_pmp, train_rmp, train_f1mp = train_men_prop_evaluator.get_prf()
-            dict_to_log = {}
-            dict_to_log['Train Precision'] = train_p
-            dict_to_log['Train Recall'] = train_r
-            dict_to_log['Train F1'] = train_f1
-            dict_to_log['Train Mention Precision'] = train_pm
-            dict_to_log['Train Mention Recall'] = train_rm
-            dict_to_log['Train Mention F1'] = train_f1m
-            dict_to_log['Train MentionProposal Precision'] = train_pmp
-            dict_to_log['Train MentionProposal Recall'] = train_rmp
-            dict_to_log['Train MentionProposal F1'] = train_f1mp
-            if not self.args.is_debug:
-                wandb.log(dict_to_log, step=global_step)
-            logger.info('Train f1, precision, recall: {}, Mentions f1, precision, recall: {}, Mention Proposals f1, precision, recall: {}'.format(\
-                (train_f1, train_p, train_r), (train_f1m, train_pm, train_rm), (train_f1mp, train_pmp, train_rmp)))
+            if epoch % 3 == 2:
+                print("============ TRAIN EXAMPLES ============")
+                print_predictions(all_gold_clusters, all_predicted_clusters, all_tokens, self.args.max_eval_print)
+                train_p, train_r, train_f1 = train_cluster_evaluator.get_prf()
+                train_pm, train_rm, train_f1m = train_mention_evaluator.get_prf()
+                train_pmp, train_rmp, train_f1mp = train_men_prop_evaluator.get_prf()
+                dict_to_log = {}
+                dict_to_log['Train Precision'] = train_p
+                dict_to_log['Train Recall'] = train_r
+                dict_to_log['Train F1'] = train_f1
+                dict_to_log['Train Mention Precision'] = train_pm
+                dict_to_log['Train Mention Recall'] = train_rm
+                dict_to_log['Train Mention F1'] = train_f1m
+                dict_to_log['Train MentionProposal Precision'] = train_pmp
+                dict_to_log['Train MentionProposal Recall'] = train_rmp
+                dict_to_log['Train MentionProposal F1'] = train_f1mp
+                if not self.args.is_debug:
+                    wandb.log(dict_to_log, step=global_step)
+                logger.info('Train f1, precision, recall: {}, Mentions f1, precision, recall: {}, Mention Proposals f1, precision, recall: {}'.format(\
+                    (train_f1, train_p, train_r), (train_f1m, train_pm, train_rm), (train_f1mp, train_pmp, train_rmp)))
 
             logger.info("***** Running evaluation {} *****".format(str(self.epochs_trained)))
             eval_loss, eval_losses_parts, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
@@ -597,7 +604,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         self.schedulers["general_scheduler"] = \
             transformers.get_linear_schedule_with_warmup(
                 self.optimizers["general_optimizer"],
-                n_docs//2, n_docs * self.config.num_train_epochs
+                n_docs, n_docs * self.config.num_train_epochs
             )
 
     def _clusterize_slots(self, cluster_logits, coref_logits, top_indices):

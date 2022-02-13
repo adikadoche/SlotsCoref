@@ -46,6 +46,10 @@ def seed(value: int) -> None:
 if __name__ == "__main__":
 
     # os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+    #vladmir limits something in sentence to one? and Im not?
+    #train cluster every 3
+    #menprop evaluation calc
+    #maybe add mention score rather than mult
     #adamw
     #word leve pruning instead of antecedent pruning?
     ####speaker+genre in text
@@ -69,7 +73,7 @@ if __name__ == "__main__":
         wandb.init(project='coref-detr', entity='adizicher', name=args.run_name)
 
     if args.is_debug:
-        vis_devices="7"
+        vis_devices="5"
         if args.no_cuda:
             args.n_gpu = 0
         else:
@@ -118,5 +122,24 @@ if __name__ == "__main__":
         model.load_weights(path=args.weights, map_location="cpu",
                            ignore={"bert_optimizer", "general_optimizer",
                                    "bert_scheduler", "general_scheduler"})
-        model.evaluate(data_split=args.data_split,
-                       word_level_conll=args.word_level)
+        eval_loss, eval_losses_parts, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
+            model.evaluate(data_split=args.data_split, word_level_conll=args.word_level)
+        eval_p, eval_r, eval_f1 = eval_cluster_evaluator.get_prf()
+        eval_pm, eval_rm, eval_f1m = eval_men_evaluator.get_prf()
+        eval_pmp, eval_rmp, eval_f1mp = eval_men_prop_evaluator.get_prf()
+        eval_results = {'loss': eval_loss,
+                'avg_f1': eval_f1,
+                'precision': eval_p,
+                'recall': eval_r,  
+                'mentions_avg_f1': eval_f1m,
+                'mentions_precision': eval_pm,
+                'mentions_recall': eval_rm,  
+                'mention_proposals_avg_f1': eval_f1mp,
+                'mention_proposals_precision': eval_pmp,
+                'mention_proposals_recall': eval_rmp} | eval_losses_parts
+        print("***** Eval results *****")
+        dict_to_log = {}
+        for key, value in eval_results.items():
+            dict_to_log['eval_{}'.format(key)] = value
+            print("eval %s = %s" % (key, str(eval_results[key])))
+
