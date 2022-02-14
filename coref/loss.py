@@ -85,12 +85,14 @@ class MatchingLoss(torch.nn.Module):
         dist_matrix = dist_matrix.clamp(min=0.0, max=1.0)
         goldgold_denom = torch.sum(goldgold_dist_mask)
         goldgold_denom = torch.maximum(torch.ones_like(goldgold_denom), goldgold_denom)
-        cost_coref += .5 * torch.sum(dist_matrix * goldgold_dist_mask) / goldgold_denom
-        passed_thresh = torch.maximum(torch.zeros_like(dist_matrix), \
-            (.3-dist_matrix) * junkgold_dist_mask)
-        junkgold_denom = torch.sum(passed_thresh>0)
+        log_incluster_dists = dist_matrix * goldgold_dist_mask
+        log_outcluster_dists = (1-dist_matrix) * junkgold_dist_mask
+        cost_coref += F.binary_cross_entropy(log_incluster_dists, torch.zeros_like(log_incluster_dists), \
+            reduction='sum') / goldgold_denom
+        junkgold_denom = torch.sum(junkgold_dist_mask)
         junkgold_denom = torch.maximum(torch.ones_like(junkgold_denom), junkgold_denom)
-        cost_junk += .5 * torch.sum(passed_thresh) / junkgold_denom  #TODO implement dbscan in predict clusters/slot attention?
+        cost_junk += F.binary_cross_entropy(log_outcluster_dists, torch.zeros_like(log_outcluster_dists), \
+            reduction='sum') / junkgold_denom
 
         costs_parts['loss_is_cluster']= self.cost_is_cluster * cost_is_cluster.detach().cpu()
         costs_parts['loss_is_mention']= self.cost_is_mention * cost_is_mention.detach().cpu()
