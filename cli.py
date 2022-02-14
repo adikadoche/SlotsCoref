@@ -6,7 +6,7 @@ def parse_args():
     argparser.add_argument("mode", choices=("train", "eval"))
     argparser.add_argument("model_type")
     argparser.add_argument("--config-file", default="config.toml")
-    argparser.add_argument("--data-split", choices=("train", "dev", "test"),
+    argparser.add_argument("--data_split", choices=("train", "dev", "test"),
                            default="test",
                            help="Data split to be used for evaluation."
                                 " Defaults to 'test'."
