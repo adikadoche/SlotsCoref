@@ -61,6 +61,9 @@ class RoughScorer(torch.nn.Module):
         top_scores, indices = torch.topk(mention_logits,
                                          k=int(self.k * len(mention_logits)),
                                          dim=0, sorted=False)
+        ind_sort = torch.argsort(indices)
+        indices = indices[ind_sort]
+        top_scores = top_scores[ind_sort]
 
         gold_indices = [gw for gc in word_clusters for gw in gc]
         cost_is_mention = torch.tensor(0., device=mention_logits.device)
