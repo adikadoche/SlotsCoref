@@ -25,13 +25,13 @@ class SlotsScorer(nn.Module):
         hidden_size = config.hidden_size
         if not config.n_hidden_layers:
             hidden_size = in_features
-        layers = []
-        for i in range(config.n_hidden_layers):
-            layers.extend([torch.nn.Linear(hidden_size if i else in_features,
-                                           hidden_size),
-                           torch.nn.LeakyReLU(),
-                           torch.nn.Dropout(config.dropout_rate)])
-        self.hidden = torch.nn.Sequential(*layers)
+        # layers = []
+        # for i in range(config.n_hidden_layers):
+        #     layers.extend([torch.nn.Linear(hidden_size if i else in_features,
+        #                                    hidden_size),
+        #                    torch.nn.LeakyReLU(),
+        #                    torch.nn.Dropout(config.dropout_rate)])
+        self.hidden = torch.nn.Linear(in_features, hidden_size)
         self.word_self_attentions = _get_clones(nn.MultiheadAttention(hidden_size, 1), 3)
 
         self.slots_query_embed = nn.Embedding(num_queries, hidden_size)
