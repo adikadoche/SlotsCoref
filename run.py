@@ -114,6 +114,10 @@ if __name__ == "__main__":
         if args.weights is not None or args.warm_start:
             model.load_weights(path=args.weights, map_location="cpu",
                                noexception=args.warm_start)
+        sp_state_dict = torch.load('sp_trained.pt', map_location='cpu')['sp']
+        model.trainable['sp'].load_state_dict(sp_state_dict)
+        for param in model.trainable['sp'].parameters():
+            param.requires_grad = False
         with output_running_time():
             model.train()
     else:
