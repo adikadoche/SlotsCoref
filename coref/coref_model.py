@@ -141,7 +141,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             res = self.run(doc)
 
             running_loss += self._coref_criterion(res.coref_scores, res.coref_y).item()
-            running_loss += res.cost_is_mention
+            running_loss += res.cost_is_mention.item()
 
             if res.span_y:
                 pred_starts = res.span_scores[:, :, 0].argmax(dim=1)
@@ -417,7 +417,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 res = self.run(doc, epoch)
 
                 c_loss = self._coref_criterion(res.coref_scores, res.coref_y)
-                c_loss += res.cost_is_mention
+                c_loss += res.cost_is_mention.item()
                 if res.span_y:
                     s_loss = (self._span_criterion(res.span_scores[:, :, 0], res.span_y[0])
                               + self._span_criterion(res.span_scores[:, :, 1], res.span_y[1])) / avg_spans / 2

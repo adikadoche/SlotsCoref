@@ -16,7 +16,7 @@
                 "eval", "roberta",
                 "--is_debug",
                 "--data_split", "dev",
-                "--weights", "/home/gamir/adiz/Code/runs/wl-coref/weights/02_13_2022_21_37_57_simpleslotscore_lam02_nomenmult/roberta_e18.pt"
+                "--weights", "/home/gamir/adiz/datasets/wl-ontonotes/2022.02.22_14.58/2022.02.22_17.39/roberta_e18_2022.02.22_19.43.pt"
             ]
         }
     ]
