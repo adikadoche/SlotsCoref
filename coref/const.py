@@ -24,9 +24,8 @@ Span = Tuple[int, int]
 
 @dataclass
 class CorefResult:
-    # coref_scores: torch.Tensor = None                  # [n_words, k + 1]
+    coref_scores: torch.Tensor = None                  # [n_words, k + 1]
     cost_is_mention: torch.Tensor = None                  # [n_words, k + 1]
-    coref_indices: torch.Tensor = None                  # [n_words, k + 1]
     coref_y: torch.Tensor = None                       # [n_words, k + 1]
 
     word_clusters: List[List[int]] = None
@@ -34,7 +33,3 @@ class CorefResult:
 
     span_scores: torch.Tensor = None                   # [n_heads, n_words, 2]
     span_y: Tuple[torch.Tensor, torch.Tensor] = None   # [n_heads] x2
-
-    coref_logits: torch.Tensor = None   
-    cluster_logits: torch.Tensor = None   
-    input_emb: torch.Tensor = None   

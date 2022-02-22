@@ -11,12 +11,12 @@
             "program": "${workspaceFolder}/run.py",
             "console": "integratedTerminal",
             "args":[
-                "train", "roberta",
-                "--is_debug"
-                // "eval", "roberta",
-                // "--is_debug",
-                // "--data-split", "dev",
-                // "--weights", "/home/gamir/adiz/Code/runs/wl-coref/weights/02_11_2022_10_05_28_firstwl/roberta_e14.pt"
+                // "train", "roberta",
+                // "--is_debug"
+                "eval", "roberta",
+                "--is_debug",
+                "--data_split", "dev",
+                "--weights", "/home/gamir/adiz/Code/runs/wl-coref/weights/02_13_2022_21_37_57_simpleslotscore_lam02_nomenmult/roberta_e18.pt"
             ]
         }
     ]

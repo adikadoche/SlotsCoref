@@ -37,8 +37,8 @@ sp_embedding_size = 64
 # are less memory intensive, so they are always done in just one batch.
 a_scoring_batch_size = 512
 
-# SlotsScorer FFNN parameters
-hidden_size = 256
+# AnaphoricityScorer FFNN parameters
+hidden_size = 1024
 n_hidden_layers = 1
 
 
@@ -53,6 +53,7 @@ max_span_len = 64
 
 # Controls how many pairs should be preserved per mention
 # after applying rough scoring.
+rough_k = 50
 topk_lambda = 0.3
 
 
@@ -65,16 +66,16 @@ bert_finetune = true
 dropout_rate = 0.3
 
 # Bert learning rate (only used if bert_finetune is set)
-lr_backbone = 8e-6
+lr_backbone = 1e-5
 
 # Task learning rate
-lr = 2.5e-5
+lr = 3e-4
 
 # For how many epochs the training is done
 num_train_epochs = 20
 
 # Controls the weight of binary cross entropy loss added to nlml loss
-bce_loss_weight = 0.5
+bce_loss_weight = 1.0
 
 # The directory that will contain conll prediction files
 conll_log_dir = "/home/gamir/adiz/datasets/wl-ontonotes/conll_logs"
