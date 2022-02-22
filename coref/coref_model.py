@@ -147,10 +147,6 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 pred_starts = res.span_scores[:, :, 0].argmax(dim=1)
                 pred_ends = res.span_scores[:, :, 1].argmax(dim=1)
                 # men propos scores
-                men_prop_evaluator.update([(res.coref_indices[i].item(), res.coref_indices[i].item()) \
-                    for i in range(len(res.coref_indices))],\
-                    [(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for i in range(len(doc['word_clusters'])) for j in \
-                range(len(doc['word_clusters'][i]))])
                 s_correct += ((res.span_y[0] == pred_starts) * (res.span_y[1] == pred_ends)).sum().item()
                 s_total += len(pred_starts)
 
@@ -186,6 +182,10 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 for i in range(len(res.word_clusters)) for j in range(len(res.word_clusters[i]))], \
                     [(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for i in range(len(doc['word_clusters']))\
                         for j in range(len(doc['word_clusters'][i]))])
+            men_prop_evaluator.update([(res.menprop[i].item(),res.menprop[i].item()) \
+                for i in range(len(res.menprop))], \
+                    [(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for i in range(len(doc['word_clusters']))\
+                        for j in range(len(doc['word_clusters'][i]))])
             all_predicted_clusters.append(res.span_clusters)
             all_gold_clusters.append(doc["span_clusters"])
             all_tokens.append(doc["cased_words"])
@@ -210,8 +210,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         print(f"============ {data_split} EXAMPLES ============")
         print_predictions(all_gold_clusters, all_predicted_clusters, all_tokens, self.args.max_eval_print)
 
-        running_losses_parts = {key:running_losses_parts[key] / len(docs) for key in running_losses_parts.keys()}
-        return (running_loss / len(docs), running_losses_parts, cluster_evaluator, mention_evaluator, men_prop_evaluator)
+        return (running_loss / len(docs), cluster_evaluator, mention_evaluator, men_prop_evaluator)
 
     def load_weights(self,
                      path: Optional[str] = None,
@@ -459,7 +458,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
             if epoch % 3 == 2:
                 print("============ TRAIN EXAMPLES ============")
-                _, _, train_cluster_evaluator, train_mention_evaluator, train_men_prop_evaluator = \
+                _, train_cluster_evaluator, train_mention_evaluator, train_men_prop_evaluator = \
                     self.evaluate(docs=train_docs)
                 train_p, train_r, train_f1 = train_cluster_evaluator.get_prf()
                 train_pm, train_rm, train_f1m = train_mention_evaluator.get_prf()
@@ -480,7 +479,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                     (train_f1, train_p, train_r), (train_f1m, train_pm, train_rm), (train_f1mp, train_pmp, train_rmp)))
 
             logger.info("***** Running evaluation {} *****".format(str(self.epochs_trained)))
-            eval_loss, eval_losses_parts, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
+            eval_loss, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
                 self.evaluate(docs=eval_docs)
             eval_p, eval_r, eval_f1 = eval_cluster_evaluator.get_prf()
             eval_pm, eval_rm, eval_f1m = eval_men_evaluator.get_prf()
@@ -494,7 +493,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                     'mentions_recall': eval_rm,  
                     'mention_proposals_avg_f1': eval_f1mp,
                     'mention_proposals_precision': eval_pmp,
-                    'mention_proposals_recall': eval_rmp} | eval_losses_parts
+                    'mention_proposals_recall': eval_rmp}
             logger.info("***** Eval results {} *****".format(str(self.epochs_trained)))
             dict_to_log = {}
             for key, value in eval_results.items():

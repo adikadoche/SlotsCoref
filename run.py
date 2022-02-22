@@ -71,7 +71,7 @@ if __name__ == "__main__":
         wandb.init(project='coref-detr', entity='adizicher', name=args.run_name)
 
     if args.is_debug:
-        vis_devices="5"
+        vis_devices="2"
         if args.no_cuda:
             args.n_gpu = 0
         else:
@@ -120,7 +120,7 @@ if __name__ == "__main__":
         model.load_weights(path=args.weights, map_location="cpu",
                            ignore={"bert_optimizer", "general_optimizer",
                                    "bert_scheduler", "general_scheduler"})
-        eval_loss, eval_losses_parts, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
+        eval_loss, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
             model.evaluate(data_split=args.data_split, word_level_conll=args.word_level)
         eval_p, eval_r, eval_f1 = eval_cluster_evaluator.get_prf()
         eval_pm, eval_rm, eval_f1m = eval_men_evaluator.get_prf()
@@ -134,7 +134,7 @@ if __name__ == "__main__":
                 'mentions_recall': eval_rm,  
                 'mention_proposals_avg_f1': eval_f1mp,
                 'mention_proposals_precision': eval_pmp,
-                'mention_proposals_recall': eval_rmp} | eval_losses_parts
+                'mention_proposals_recall': eval_rmp}
         print("***** Eval results *****")
         dict_to_log = {}
         for key, value in eval_results.items():
