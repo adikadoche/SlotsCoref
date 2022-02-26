@@ -47,8 +47,8 @@ class RoughScorer(torch.nn.Module):
         self.mention_classifier = Linear(self.ffnn_size, 1)
         self.k_menprop = config.topk_lambda
 
-        self.dropout = torch.nn.Dropout(config.dropout_rate)
-        self.bilinear = torch.nn.Linear(features, features)
+        # self.dropout = torch.nn.Dropout(config.dropout_rate)
+        # self.bilinear = torch.nn.Linear(features, features)
 
         self.k = config.rough_k
 
@@ -68,19 +68,22 @@ class RoughScorer(torch.nn.Module):
                                          k=int(self.k_menprop * len(mention_logits)),
                                          dim=0, sorted=False)
         indices = indices.sort()[0]
+        top_indices = indices.reshape(1,-1).repeat(mentions.shape[0],1)
+
 
         antece_mask = torch.arange(mentions.shape[0])
         antece_mask = antece_mask.unsqueeze(1) - antece_mask.unsqueeze(0)
+        antece_mask = antece_mask[:,indices]
         indices_vector = torch.tensor([i in indices for i in range(mentions.shape[0])]).to(torch.float)
-        indices_mask = indices_vector.unsqueeze(0).repeat(mentions.shape[0],1) * indices_vector.unsqueeze(1).repeat(1,mentions.shape[0])
+        indices_mask = indices_vector.unsqueeze(1).repeat(1,indices.shape[0])
         pair_mask = (antece_mask > 0).to(torch.float) * (indices_mask > 0).to(torch.float)
         pair_mask = torch.log(pair_mask)
         pair_mask = pair_mask.to(mentions.device)
 
-        bilinear_scores = self.dropout(self.bilinear(mentions)).mm(mentions.T) + \
-            (mention_logits.unsqueeze(0).repeat(mentions.shape[0],1) * mention_logits.unsqueeze(1).repeat(1,mentions.shape[0]))
+        # bilinear_scores = self.dropout(self.bilinear(mentions)).mm(mentions.T) + \
+        #     (mention_logits.unsqueeze(0).repeat(mentions.shape[0],1) * mention_logits.unsqueeze(1).repeat(1,mentions.shape[0]))
 
-        rough_scores = pair_mask + bilinear_scores
+        # rough_scores = pair_mask + bilinear_scores
 
         gold_indices = [gw for gc in word_clusters for gw in gc]
         cost_is_mention = torch.tensor(0., device=mention_logits.device)
@@ -89,7 +92,8 @@ class RoughScorer(torch.nn.Module):
             cost_is_mention = F.binary_cross_entropy(gold_probs, torch.ones_like(gold_probs))
         junk_probs = mention_logits[[i for i in range(len(mention_logits)) if i not in gold_indices]]
         cost_is_mention += F.binary_cross_entropy(junk_probs, torch.zeros_like(junk_probs))
-        return *self._prune(rough_scores), indices, cost_is_mention*.3
+        return pair_mask, top_indices, indices, cost_is_mention*.3
+        # return *self._prune(rough_scores), indices, cost_is_mention*.3
 
         # pair_mask = torch.arange(mentions.shape[0])
         # pair_mask = pair_mask.unsqueeze(1) - pair_mask.unsqueeze(0)

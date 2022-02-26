@@ -13,24 +13,25 @@ class AnaphoricityScorer(torch.nn.Module):
                  in_features: int,
                  config: Config):
         super().__init__()
-        hidden_size = config.hidden_size
-        if not config.n_hidden_layers:
-            hidden_size = in_features
-        layers = []
-        for i in range(config.n_hidden_layers):
-            layers.extend([torch.nn.Linear(hidden_size if i else in_features,
-                                           hidden_size),
-                           torch.nn.LeakyReLU(),
-                           torch.nn.Dropout(config.dropout_rate)])
-        self.hidden = torch.nn.Sequential(*layers)
-        self.out = torch.nn.Linear(hidden_size, out_features=1)
+        self.self_attn = torch.nn.MultiheadAttention(in_features, num_heads=1, batch_first=True)
+        # hidden_size = config.hidden_size
+        # if not config.n_hidden_layers:
+        #     hidden_size = in_features
+        # layers = []
+        # for i in range(config.n_hidden_layers):
+        #     layers.extend([torch.nn.Linear(hidden_size if i else in_features,
+        #                                    hidden_size),
+        #                    torch.nn.LeakyReLU(),
+        #                    torch.nn.Dropout(config.dropout_rate)])
+        # self.hidden = torch.nn.Sequential(*layers)
+        # self.out = torch.nn.Linear(hidden_size, out_features=1)
 
     def forward(self, *,  # type: ignore  # pylint: disable=arguments-differ  #35566 in pytorch
                 all_mentions: torch.Tensor,
-                mentions_batch: torch.Tensor,
-                pw_batch: torch.Tensor,
-                top_indices_batch: torch.Tensor,
-                top_rough_scores_batch: torch.Tensor,
+                # mentions_batch: torch.Tensor,
+                # pw_batch: torch.Tensor,
+                # top_indices_batch: torch.Tensor,
+                # top_rough_scores_batch: torch.Tensor,
                 ) -> torch.Tensor:
         """ Builds a pairwise matrix, scores the pairs and returns the scores.
 
@@ -46,12 +47,20 @@ class AnaphoricityScorer(torch.nn.Module):
                 anaphoricity scores for the pairs + a dummy column
         """
         # [batch_size, n_ants, pair_emb]
-        pair_matrix = self._get_pair_matrix(
-            all_mentions, mentions_batch, pw_batch, top_indices_batch)
+        all_mentions = all_mentions.unsqueeze(0)
+        _, attn_weights = self.self_attn(all_mentions, all_mentions, all_mentions, need_weights=True, \
+            attn_mask=torch.triu(torch.ones(all_mentions.shape[1], all_mentions.shape[1], device=all_mentions.device), diagonal=1)==1,)
+        attn_weights = attn_weights.squeeze(0)
+                            #   key_padding_mask=src_key_padding_mask)[0]
+        # pair_matrix = self._get_pair_matrix(
+        #     all_mentions, mentions_batch, pw_batch, top_indices_batch)
 
-        # [batch_size, n_ants]
-        scores = top_rough_scores_batch + self._ffnn(pair_matrix)
-        scores = utils.add_dummy(scores, eps=True)
+        # # [batch_size, n_ants]
+        # scores = top_rough_scores_batch + self._ffnn(pair_matrix)
+        # scores = utils.add_dummy(scores, eps=True)
+        dummpy_score = attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])].unsqueeze(-1)
+        attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])] = 0
+        scores = torch.cat([dummpy_score, attn_weights], -1)
 
         return scores
 

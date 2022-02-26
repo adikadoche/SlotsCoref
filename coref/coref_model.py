@@ -279,32 +279,33 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         # Obtain bilinear scores and leave only top-k antecedents for each word
         # top_rough_scores  [n_words, n_ants]
         # top_indices       [n_words, n_ants]
-        top_rough_scores, top_indices, res.menprop, res.cost_is_mention = self.rough_scorer(words, doc['word_clusters'])
+        scores_mask, top_indices, res.menprop, res.cost_is_mention = self.rough_scorer(words, doc['word_clusters'])
         # top_rough_scores, top_indices = self.rough_scorer(words, doc['word_clusters'])
 
         # Get pairwise features [n_words, n_ants, n_pw_features]
-        pw = self.pw(top_indices, doc)
+        # pw = self.pw(top_indices, doc)
 
-        batch_size = self.config.a_scoring_batch_size
-        a_scores_lst: List[torch.Tensor] = []
+        # batch_size = self.config.a_scoring_batch_size
+        # a_scores_lst: List[torch.Tensor] = []
 
-        for i in range(0, len(words), batch_size):
-            pw_batch = pw[i:i + batch_size]
-            words_batch = words[i:i + batch_size]
-            top_indices_batch = top_indices[i:i + batch_size]
-            top_rough_scores_batch = top_rough_scores[i:i + batch_size]
+        # for i in range(0, len(words), batch_size):
+        #     pw_batch = pw[i:i + batch_size]
+        #     words_batch = words[i:i + batch_size]
+        #     top_indices_batch = top_indices[i:i + batch_size]
+        #     top_rough_scores_batch = top_rough_scores[i:i + batch_size]
 
             # a_scores_batch    [batch_size, n_ants]
-            a_scores_batch = self.a_scorer(
-                all_mentions=words, mentions_batch=words_batch,
-                pw_batch=pw_batch, top_indices_batch=top_indices_batch,
-                top_rough_scores_batch=top_rough_scores_batch
-            )
-            a_scores_lst.append(a_scores_batch)
+        scores = self.a_scorer(
+            all_mentions=words[res.menprop]
+        )
+        res.coref_scores = torch.ones(top_indices.shape[0], scores.shape[1], device=top_indices.device)
+        res.coref_scores[res.menprop] = scores
+        res.coref_scores[:,1:] = res.coref_scores[:,1:] + scores_mask
+        # a_scores_lst.append(a_scores_batch)
 
 
         # coref_scores  [n_spans, n_ants]
-        res.coref_scores = torch.cat(a_scores_lst, dim=0)
+        # res.coref_scores = torch.cat(a_scores_lst, dim=0)
         res.span_scores, res.span_y = self.sp.get_training_data(doc, words)
         # gold_mentions = [m for c in doc['word_clusters'] for m in c]
         # cluster_id = [i for i,c in enumerate(doc['word_clusters']) for m in c]
@@ -328,8 +329,10 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         # ordered_cols = torch.tensor([gm + 1 for gm in gold_mentions] + [x for x in range(ordered_scores.shape[1]) if x not in gold_mentions])
         # ordered_scores = ordered_scores[ordered_rows][:,ordered_cols]
 
+        # res.coref_y = self._get_ground_truth(
+        #     cluster_ids, top_indices, (top_rough_scores > float("-inf")))
         res.coref_y = self._get_ground_truth(
-            cluster_ids, top_indices, (top_rough_scores > float("-inf")))
+            cluster_ids, top_indices, scores_mask)
         if epoch % 3 == 2 or not self.training:
             res.word_clusters = self._clusterize(doc, res.coref_scores,
                                                 top_indices)
@@ -574,7 +577,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         self.pw = PairwiseEncoder(self.config).to(self.device)
 
         bert_emb = self.bert.config.hidden_size
-        pair_emb = bert_emb * 3 + self.pw.shape
+        pair_emb = bert_emb #* 3 + self.pw.shape
 
         # pylint: disable=line-too-long
         self.a_scorer = AnaphoricityScorer(pair_emb, self.config).to(self.device)
