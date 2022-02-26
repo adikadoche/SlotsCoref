@@ -62,6 +62,7 @@ class AnaphoricityScorer(torch.nn.Module):
         super().__init__()
         self_attn_layer = SelfAttention(in_features, device)
         self.layers = _get_clones(self_attn_layer, 6)
+        self.layers_weights = torch.nn.Linear(len(self.layers), 1)
 
         # hidden_size = config.hidden_size
         # if not config.n_hidden_layers:
@@ -106,7 +107,8 @@ class AnaphoricityScorer(torch.nn.Module):
         #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
         #         attn_mask=causal_mask)
         attn_weights = torch.cat(attn_weights, 0)
-        attn_weights = attn_weights.mean(dim=0)
+        layers_weights = self.layers_weights.weight.softmax(1).transpose(0,1).unsqueeze(-1)
+        attn_weights = torch.sum(attn_weights * layers_weights, dim=0)
         # attn_weights = attn_weights.squeeze(0)
                             #   key_padding_mask=src_key_padding_mask)[0]
         # pair_matrix = self._get_pair_matrix(
