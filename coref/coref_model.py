@@ -128,6 +128,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         # w_checker = ClusterChecker()
         # s_checker = ClusterChecker()
         running_loss = 0.0
+        losses_parts = {'loss_is_cluster':0.0, 'loss_is_mention':0.0, 'loss_coref':0.0}
         s_correct = 0
         s_total = 0
 
@@ -141,8 +142,10 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         for doc in pbar:
             res = self.run(doc)
 
-            running_loss += self._coref_criterion(res.coref_scores, res.coref_y).item()
-            running_loss += res.cost_is_mention.item()
+            c_loss = self._coref_criterion(res.coref_scores, res.coref_y).item()
+            running_loss += c_loss + res.cost_is_mention
+            losses_parts['loss_coref'] += c_loss.item()
+            losses_parts['loss_is_mention'] += res.cost_is_mention.item()
 
             if res.span_y:
                 pred_starts = res.span_scores[:, :, 0].argmax(dim=1)
@@ -214,7 +217,10 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         # logger.info('Cluster f1, precision, recall: {}'.format(\
         #     (train_f1, train_p, train_r)))
 
-        return (running_loss / len(docs), cluster_evaluator, mention_evaluator, men_prop_evaluator)
+        losses_parts['loss_is_cluster'] = s_correct / s_total
+        losses_parts['loss_is_mention'] /= len(docs)
+        losses_parts['loss_coref'] /= len(docs)
+        return (running_loss / len(docs), losses_parts, cluster_evaluator, mention_evaluator, men_prop_evaluator)
 
     def load_weights(self,
                      path: Optional[str] = None,
@@ -298,9 +304,10 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         scores = self.a_scorer(
             all_mentions=words[res.menprop]
         )
-        res.coref_scores = torch.ones(top_indices.shape[0], scores.shape[1], device=top_indices.device)
-        res.coref_scores[res.menprop] = scores
-        res.coref_scores[:,1:] = res.coref_scores[:,1:] + scores_mask
+        coref_scores = torch.zeros(top_indices.shape[0], scores.shape[1], device=top_indices.device)
+        coref_scores[res.menprop] = scores
+        coref_scores = coref_scores + scores_mask
+        res.coref_scores = utils.add_dummy(coref_scores, eps=True)
         # a_scores_lst.append(a_scores_batch)
 
 
@@ -332,7 +339,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         # res.coref_y = self._get_ground_truth(
         #     cluster_ids, top_indices, (top_rough_scores > float("-inf")))
         res.coref_y = self._get_ground_truth(
-            cluster_ids, top_indices, scores_mask)
+            cluster_ids, top_indices, (scores_mask > float("-inf")))
         if epoch % 3 == 2 or not self.training:
             res.word_clusters = self._clusterize(doc, res.coref_scores,
                                                 top_indices)
@@ -408,6 +415,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         last_saved_epoch = -1
         global_step = 0
         recent_losses = []
+        recent_losses_parts = {'loss_is_cluster':[], 'loss_is_mention':[], 'loss_coref':[]}
         for epoch in range(self.epochs_trained, self.config.num_train_epochs):
             self.training = True
             running_c_loss = 0.0
@@ -425,12 +433,15 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 res = self.run(doc, epoch)
 
                 c_loss = self._coref_criterion(res.coref_scores, res.coref_y)
-                c_loss += res.cost_is_mention.item()
+                recent_losses_parts['loss_coref'].append(c_loss.item())
+                c_loss += res.cost_is_mention
+                recent_losses_parts['loss_is_mention'].append(res.cost_is_mention.item())
                 if res.span_y:
                     s_loss = (self._span_criterion(res.span_scores[:, :, 0], res.span_y[0])
                               + self._span_criterion(res.span_scores[:, :, 1], res.span_y[1])) / avg_spans / 2
                 else:
                     s_loss = torch.zeros_like(c_loss)
+                recent_losses_parts['loss_is_cluster'].append(s_loss.item())
 
                 del res
 
@@ -459,6 +470,9 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                         dict_to_log['lr'] = self.optimizers["general_optimizer"].param_groups[0]['lr']
                         dict_to_log['lr_bert'] = self.optimizers["bert_optimizer"].param_groups[0]['lr']
                         dict_to_log['loss'] = np.mean(recent_losses)
+                        for key in recent_losses_parts.keys():
+                            dict_to_log[key] = np.mean(recent_losses_parts[key])
+                            recent_losses_parts[key].clear()
                         wandb.log(dict_to_log, step=global_step)
                     recent_losses.clear()
                 
@@ -466,7 +480,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
             if epoch % 3 == 2:
                 print("============ TRAIN EXAMPLES ============")
-                _, train_cluster_evaluator, train_mention_evaluator, train_men_prop_evaluator = \
+                _, _, train_cluster_evaluator, train_mention_evaluator, train_men_prop_evaluator = \
                     self.evaluate(docs=train_docs)
                 train_p, train_r, train_f1 = train_cluster_evaluator.get_prf()
                 train_pm, train_rm, train_f1m = train_mention_evaluator.get_prf()
@@ -487,7 +501,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                     (train_f1, train_p, train_r), (train_f1m, train_pm, train_rm), (train_f1mp, train_pmp, train_rmp)))
 
             logger.info("***** Running evaluation {} *****".format(str(self.epochs_trained)))
-            eval_loss, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
+            eval_loss, eval_loss_parts, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
                 self.evaluate(docs=eval_docs)
             eval_p, eval_r, eval_f1 = eval_cluster_evaluator.get_prf()
             eval_pm, eval_rm, eval_f1m = eval_men_evaluator.get_prf()
@@ -501,7 +515,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                     'mentions_recall': eval_rm,  
                     'mention_proposals_avg_f1': eval_f1mp,
                     'mention_proposals_precision': eval_pmp,
-                    'mention_proposals_recall': eval_rmp}
+                    'mention_proposals_recall': eval_rmp} | eval_loss_parts
             logger.info("***** Eval results {} *****".format(str(self.epochs_trained)))
             dict_to_log = {}
             for key, value in eval_results.items():
@@ -580,7 +594,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         pair_emb = bert_emb #* 3 + self.pw.shape
 
         # pylint: disable=line-too-long
-        self.a_scorer = AnaphoricityScorer(pair_emb, self.config).to(self.device)
+        self.a_scorer = AnaphoricityScorer(pair_emb, self.device).to(self.device)
         self.we = WordEncoder(bert_emb, self.config).to(self.device)
         self.rough_scorer = RoughScorer(bert_emb, self.config, self.bert.config).to(self.device)
         self.sp = SpanPredictor(bert_emb, self.config.sp_embedding_size).to(self.device)

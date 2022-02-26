@@ -2,6 +2,7 @@
 mentions produces their anaphoricity scores.
 """
 import torch
+import math
 
 from coref import utils
 from coref.config import Config
@@ -11,9 +12,17 @@ class AnaphoricityScorer(torch.nn.Module):
     """ Calculates anaphoricity scores by passing the inputs into a FFNN """
     def __init__(self,
                  in_features: int,
-                 config: Config):
+                 device: Config):
         super().__init__()
-        self.self_attn = torch.nn.MultiheadAttention(in_features, num_heads=1, batch_first=True)
+        self.self_attn = []
+        # for _ in range(3):
+        #     self.self_attn.append(torch.nn.MultiheadAttention(in_features, num_heads=8, batch_first=True, device=device))
+        self.to_q = torch.nn.Linear(in_features, in_features)
+        self.to_k = torch.nn.Linear(in_features, in_features)
+        self.to_v = torch.nn.Linear(in_features, in_features)
+        self.bsz = 1
+        self.num_heads = 1
+
         # hidden_size = config.hidden_size
         # if not config.n_hidden_layers:
         #     hidden_size = in_features
@@ -25,6 +34,25 @@ class AnaphoricityScorer(torch.nn.Module):
         #                    torch.nn.Dropout(config.dropout_rate)])
         # self.hidden = torch.nn.Sequential(*layers)
         # self.out = torch.nn.Linear(hidden_size, out_features=1)
+
+    def _scaled_dot_product_attention(self,
+        src,
+        attn_mask = None,
+        dropout_p = 0.0,
+    ):
+        k,q,v = self.to_k(src), self.to_q(src), self.to_v(src)
+        B, Nt, E = q.shape
+        q = q / math.sqrt(E)
+        # (B, Nt, E) x (B, E, Ns) -> (B, Nt, Ns)
+        attn = torch.bmm(q, k.transpose(-2, -1))
+        if attn_mask is not None:
+            attn += attn_mask
+        # if dropout_p > 0.0:
+        #     attn = dropout(attn, p=dropout_p)
+        # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
+        output = torch.bmm(attn.softmax(dim=-1), v)
+        return output, attn
+
 
     def forward(self, *,  # type: ignore  # pylint: disable=arguments-differ  #35566 in pytorch
                 all_mentions: torch.Tensor,
@@ -47,9 +75,18 @@ class AnaphoricityScorer(torch.nn.Module):
                 anaphoricity scores for the pairs + a dummy column
         """
         # [batch_size, n_ants, pair_emb]
-        all_mentions = all_mentions.unsqueeze(0)
-        _, attn_weights = self.self_attn(all_mentions, all_mentions, all_mentions, need_weights=True, \
-            attn_mask=torch.triu(torch.ones(all_mentions.shape[1], all_mentions.shape[1], device=all_mentions.device), diagonal=1)==1,)
+        src = all_mentions.unsqueeze(0)
+        causal_mask = torch.triu(torch.ones(all_mentions.shape[0], all_mentions.shape[0], device=all_mentions.device), diagonal=1)==1
+        new_attn_mask = torch.zeros_like(causal_mask, dtype=torch.float)
+        new_attn_mask.masked_fill_(causal_mask, float("-inf"))
+        causal_mask = new_attn_mask
+        attn_output, attn_output_weights = self._scaled_dot_product_attention(src, causal_mask)
+        attn_output = attn_output.transpose(0, 1).contiguous().view(all_mentions.shape[0], self.bsz, src.shape[-1])
+        attn_output_weights = attn_output_weights.view(self.bsz, self.num_heads, all_mentions.shape[0], all_mentions.shape[0])
+        src, attn_weights = attn_output, attn_output_weights.sum(dim=1) / self.num_heads
+        # for i in range(len(self.self_attn)):
+        #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
+        #         attn_mask=causal_mask)
         attn_weights = attn_weights.squeeze(0)
                             #   key_padding_mask=src_key_padding_mask)[0]
         # pair_matrix = self._get_pair_matrix(
@@ -58,11 +95,9 @@ class AnaphoricityScorer(torch.nn.Module):
         # # [batch_size, n_ants]
         # scores = top_rough_scores_batch + self._ffnn(pair_matrix)
         # scores = utils.add_dummy(scores, eps=True)
-        dummpy_score = attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])].unsqueeze(-1)
         attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])] = 0
-        scores = torch.cat([dummpy_score, attn_weights], -1)
 
-        return scores
+        return attn_weights
 
     def _ffnn(self, x: torch.Tensor) -> torch.Tensor:
         """
