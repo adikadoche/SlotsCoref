@@ -3,37 +3,24 @@ mentions produces their anaphoricity scores.
 """
 import torch
 import math
+import copy
 
 from coref import utils
 from coref.config import Config
 
+def _get_clones(module, N):
+    return torch.nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
-class AnaphoricityScorer(torch.nn.Module):
-    """ Calculates anaphoricity scores by passing the inputs into a FFNN """
+class SelfAttention(torch.nn.Module):
     def __init__(self,
                  in_features: int,
                  device: Config):
         super().__init__()
-        self.self_attn = []
-        # for _ in range(3):
-        #     self.self_attn.append(torch.nn.MultiheadAttention(in_features, num_heads=8, batch_first=True, device=device))
         self.to_q = torch.nn.Linear(in_features, in_features)
         self.to_k = torch.nn.Linear(in_features, in_features)
         self.to_v = torch.nn.Linear(in_features, in_features)
         self.bsz = 1
         self.num_heads = 1
-
-        # hidden_size = config.hidden_size
-        # if not config.n_hidden_layers:
-        #     hidden_size = in_features
-        # layers = []
-        # for i in range(config.n_hidden_layers):
-        #     layers.extend([torch.nn.Linear(hidden_size if i else in_features,
-        #                                    hidden_size),
-        #                    torch.nn.LeakyReLU(),
-        #                    torch.nn.Dropout(config.dropout_rate)])
-        # self.hidden = torch.nn.Sequential(*layers)
-        # self.out = torch.nn.Linear(hidden_size, out_features=1)
 
     def _scaled_dot_product_attention(self,
         src,
@@ -52,6 +39,41 @@ class AnaphoricityScorer(torch.nn.Module):
         # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
         output = torch.bmm(attn.softmax(dim=-1), v)
         return output, attn
+    
+    def forward(self, src, attn_mask):
+        if attn_mask.dtype == torch.bool:
+            new_attn_mask = torch.zeros_like(attn_mask, dtype=torch.float)
+            new_attn_mask.masked_fill_(attn_mask, float("-inf"))
+            attn_mask = new_attn_mask
+
+        attn_output, attn_output_weights = self._scaled_dot_product_attention(src, attn_mask)
+        attn_output = attn_output.transpose(0, 1).contiguous().view(src.shape[1], self.bsz, src.shape[-1])
+        attn_output_weights = attn_output_weights.view(self.bsz, self.num_heads, src.shape[1], src.shape[1])
+        src, attn_weights = attn_output.transpose(0,1), attn_output_weights.sum(dim=1) / self.num_heads
+
+        return src, attn_weights, attn_mask
+
+
+class AnaphoricityScorer(torch.nn.Module):
+    """ Calculates anaphoricity scores by passing the inputs into a FFNN """
+    def __init__(self,
+                 in_features: int,
+                 device: Config):
+        super().__init__()
+        self_attn_layer = SelfAttention(in_features, device)
+        self.layers = _get_clones(self_attn_layer, 6)
+
+        # hidden_size = config.hidden_size
+        # if not config.n_hidden_layers:
+        #     hidden_size = in_features
+        # layers = []
+        # for i in range(config.n_hidden_layers):
+        #     layers.extend([torch.nn.Linear(hidden_size if i else in_features,
+        #                                    hidden_size),
+        #                    torch.nn.LeakyReLU(),
+        #                    torch.nn.Dropout(config.dropout_rate)])
+        # self.hidden = torch.nn.Sequential(*layers)
+        # self.out = torch.nn.Linear(hidden_size, out_features=1)
 
 
     def forward(self, *,  # type: ignore  # pylint: disable=arguments-differ  #35566 in pytorch
@@ -77,13 +99,8 @@ class AnaphoricityScorer(torch.nn.Module):
         # [batch_size, n_ants, pair_emb]
         src = all_mentions.unsqueeze(0)
         causal_mask = torch.triu(torch.ones(all_mentions.shape[0], all_mentions.shape[0], device=all_mentions.device), diagonal=1)==1
-        new_attn_mask = torch.zeros_like(causal_mask, dtype=torch.float)
-        new_attn_mask.masked_fill_(causal_mask, float("-inf"))
-        causal_mask = new_attn_mask
-        attn_output, attn_output_weights = self._scaled_dot_product_attention(src, causal_mask)
-        attn_output = attn_output.transpose(0, 1).contiguous().view(all_mentions.shape[0], self.bsz, src.shape[-1])
-        attn_output_weights = attn_output_weights.view(self.bsz, self.num_heads, all_mentions.shape[0], all_mentions.shape[0])
-        src, attn_weights = attn_output, attn_output_weights.sum(dim=1) / self.num_heads
+        for layer in self.layers:
+            src, attn_weights, causal_mask = layer(src, causal_mask)
         # for i in range(len(self.self_attn)):
         #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
         #         attn_mask=causal_mask)
