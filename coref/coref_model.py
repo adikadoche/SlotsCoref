@@ -143,8 +143,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             res = self.run(doc)
 
             c_loss = self._coref_criterion(res.coref_scores, res.coref_y).item()
-            running_loss += c_loss + res.cost_is_mention
-            losses_parts['loss_coref'] += c_loss.item()
+            running_loss += c_loss + res.cost_is_mention.item()
+            losses_parts['loss_coref'] += c_loss
             losses_parts['loss_is_mention'] += res.cost_is_mention.item()
 
             if res.span_y:
