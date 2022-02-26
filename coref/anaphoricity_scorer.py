@@ -99,12 +99,15 @@ class AnaphoricityScorer(torch.nn.Module):
         # [batch_size, n_ants, pair_emb]
         src = all_mentions.unsqueeze(0)
         causal_mask = torch.triu(torch.ones(all_mentions.shape[0], all_mentions.shape[0], device=all_mentions.device), diagonal=1)==1
-        for layer in self.layers:
-            src, attn_weights, causal_mask = layer(src, causal_mask)
+        attn_weights = [[]] * len(self.layers)
+        for i,layer in enumerate(self.layers):
+            src, attn_weights[i], causal_mask = layer(src, causal_mask)
         # for i in range(len(self.self_attn)):
         #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
         #         attn_mask=causal_mask)
-        attn_weights = attn_weights.squeeze(0)
+        attn_weights = torch.cat(attn_weights, 0)
+        attn_weights = attn_weights.mean(dim=0)
+        # attn_weights = attn_weights.squeeze(0)
                             #   key_padding_mask=src_key_padding_mask)[0]
         # pair_matrix = self._get_pair_matrix(
         #     all_mentions, mentions_batch, pw_batch, top_indices_batch)
