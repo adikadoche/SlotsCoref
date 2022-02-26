@@ -101,14 +101,15 @@ class AnaphoricityScorer(torch.nn.Module):
         src = all_mentions.unsqueeze(0)
         causal_mask = torch.triu(torch.ones(all_mentions.shape[0], all_mentions.shape[0], device=all_mentions.device), diagonal=1)==1
         attn_weights = [[]] * len(self.layers)
+        layers_weights = self.layers_weights.weight.softmax(1).transpose(0,1)
         for i,layer in enumerate(self.layers):
             src, attn_weights[i], causal_mask = layer(src, causal_mask)
+            attn_weights[i][attn_weights[i]>float("-inf")] *= layers_weights[i]
         # for i in range(len(self.self_attn)):
         #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
         #         attn_mask=causal_mask)
         attn_weights = torch.cat(attn_weights, 0)
-        layers_weights = self.layers_weights.weight.softmax(1).transpose(0,1).unsqueeze(-1)
-        attn_weights = torch.sum(attn_weights * layers_weights, dim=0)
+        attn_weights = torch.sum(attn_weights, dim=0)
         # attn_weights = attn_weights.squeeze(0)
                             #   key_padding_mask=src_key_padding_mask)[0]
         # pair_matrix = self._get_pair_matrix(
@@ -117,7 +118,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # # [batch_size, n_ants]
         # scores = top_rough_scores_batch + self._ffnn(pair_matrix)
         # scores = utils.add_dummy(scores, eps=True)
-        attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])] = 0
+        # attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])] = 0
 
         return attn_weights
 
