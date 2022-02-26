@@ -16,7 +16,7 @@
                 "eval", "roberta",
                 "--is_debug",
                 "--data_split", "dev",
-                "--weights", "/home/gamir/adiz/datasets/wl-ontonotes/2022.02.22_14.58/2022.02.22_17.39/roberta_e18_2022.02.22_19.43.pt"
+                "--weights", "/home/gamir/adiz/datasets/wl-ontonotes/2022.02.22_14.58/2022.02.22_17.39/roberta_e20_2022.02.22_19.57.pt" //roberta_e20_2022.02.22_19.57  //roberta_e18_2022.02.22_19.43
             ]
         }
     ]

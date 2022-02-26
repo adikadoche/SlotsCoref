@@ -121,7 +121,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         self.training = False
         if docs is None:
             docs = self._get_docs(self.config.__dict__[f"predict_file"])            
-        cluster_evaluator = CorefEvaluator()
+        cluster_evaluator = CorefEvaluator()       
+        # cluster_graph_evaluator = CorefEvaluator()
         mention_evaluator = MentionEvaluator()
         men_prop_evaluator = MentionEvaluator()
         # w_checker = ClusterChecker()
@@ -209,6 +210,9 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
         print(f"============ {data_split} EXAMPLES ============")
         print_predictions(all_gold_clusters, all_predicted_clusters, all_tokens, self.args.max_eval_print)
+        # train_p, train_r, train_f1 = cluster_graph_evaluator.get_prf()
+        # logger.info('Cluster f1, precision, recall: {}'.format(\
+        #     (train_f1, train_p, train_r)))
 
         return (running_loss / len(docs), cluster_evaluator, mention_evaluator, men_prop_evaluator)
 
@@ -224,7 +228,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         Assumes files are named like {configuration}_(e{epoch}_{time})*.pt.
         """
         if path is None:
-            pattern = rf"{self.config.section}_e(\d+)\.pt"
+            pattern = rf"{self.config.section}_e(\d+).*\.pt"
             files = []
             for f in os.listdir(self.config.output_dir):
                 match_obj = re.match(pattern, f)
@@ -276,6 +280,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         # top_rough_scores  [n_words, n_ants]
         # top_indices       [n_words, n_ants]
         top_rough_scores, top_indices, res.menprop, res.cost_is_mention = self.rough_scorer(words, doc['word_clusters'])
+        # top_rough_scores, top_indices = self.rough_scorer(words, doc['word_clusters'])
 
         # Get pairwise features [n_words, n_ants, n_pw_features]
         pw = self.pw(top_indices, doc)

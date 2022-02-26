@@ -91,6 +91,17 @@ class RoughScorer(torch.nn.Module):
         cost_is_mention += F.binary_cross_entropy(junk_probs, torch.zeros_like(junk_probs))
         return *self._prune(rough_scores), indices, cost_is_mention*.3
 
+        # pair_mask = torch.arange(mentions.shape[0])
+        # pair_mask = pair_mask.unsqueeze(1) - pair_mask.unsqueeze(0)
+        # pair_mask = torch.log((pair_mask > 0).to(torch.float))
+        # pair_mask = pair_mask.to(mentions.device)
+
+        # bilinear_scores = self.dropout(self.bilinear(mentions)).mm(mentions.T)
+
+        # rough_scores = pair_mask + bilinear_scores
+
+        # return self._prune(rough_scores)
+
     def _prune(self,
                rough_scores: torch.Tensor
                ) -> Tuple[torch.Tensor, torch.Tensor]:
