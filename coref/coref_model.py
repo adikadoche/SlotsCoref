@@ -537,16 +537,16 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 if prev_best_f1_epoch > -1 and os.path.exists(path_to_remove):
                     os.remove(path_to_remove)
                     print(f'removed checkpoint with f1 {prev_best_f1} from {path_to_remove}')
-                else:
-                    self.save_weights()
-                    print(f'saved checkpoint in epoch {epoch}')
-                    path_to_remove = os.path.join(self.config.output_dir,
-                                        f"{self.config.section}"
-                                        f"_e{last_saved_epoch}.pt")
-                    if last_saved_epoch > -1 and last_saved_epoch != best_f1_epoch and os.path.exists(path_to_remove):
-                        os.remove(path_to_remove)
-                        print(f'removed previous checkpoint in epoch {last_saved_epoch}')
-                    last_saved_epoch = epoch
+            else:
+                self.save_weights()
+                print(f'saved checkpoint in epoch {epoch}')
+                path_to_remove = os.path.join(self.config.output_dir,
+                                    f"{self.config.section}"
+                                    f"_e{last_saved_epoch}.pt")
+                if last_saved_epoch > -1 and last_saved_epoch != best_f1_epoch and os.path.exists(path_to_remove):
+                    os.remove(path_to_remove)
+                    print(f'removed previous checkpoint in epoch {last_saved_epoch}')
+                last_saved_epoch = epoch
             if not self.args.is_debug:
                 wandb.log({'eval_best_f1':best_f1}, step=global_step)
                 try:
@@ -594,7 +594,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         pair_emb = bert_emb #* 3 + self.pw.shape
 
         # pylint: disable=line-too-long
-        self.a_scorer = AnaphoricityScorer(pair_emb, self.device).to(self.device)
+        self.a_scorer = AnaphoricityScorer(pair_emb, self.config).to(self.device)
         self.we = WordEncoder(bert_emb, self.config).to(self.device)
         self.rough_scorer = RoughScorer(bert_emb, self.config, self.bert.config).to(self.device)
         self.sp = SpanPredictor(bert_emb, self.config.sp_embedding_size).to(self.device)

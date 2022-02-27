@@ -14,13 +14,14 @@ def _get_clones(module, N):
 class SelfAttention(torch.nn.Module):
     def __init__(self,
                  in_features: int,
-                 device: Config):
+                 dropout_rate):
         super().__init__()
         self.to_q = torch.nn.Linear(in_features, in_features)
         self.to_k = torch.nn.Linear(in_features, in_features)
         self.to_v = torch.nn.Linear(in_features, in_features)
         self.bsz = 1
         self.num_heads = 1
+        self.dropout = torch.nn.Dropout(dropout_rate)
 
     def _scaled_dot_product_attention(self,
         src,
@@ -51,18 +52,18 @@ class SelfAttention(torch.nn.Module):
         attn_output_weights = attn_output_weights.view(self.bsz, self.num_heads, src.shape[1], src.shape[1])
         src, attn_weights = attn_output.transpose(0,1), attn_output_weights.sum(dim=1) / self.num_heads
 
-        return src, attn_weights, attn_mask
+        return src, self.dropout(attn_weights), attn_mask
 
 
 class AnaphoricityScorer(torch.nn.Module):
     """ Calculates anaphoricity scores by passing the inputs into a FFNN """
     def __init__(self,
                  in_features: int,
-                 device: Config):
+                 config: Config):
         super().__init__()
-        self_attn_layer = SelfAttention(in_features, device)
-        self.layers = _get_clones(self_attn_layer, 6)
-        self.layers_weights = torch.nn.Linear(len(self.layers), 1)
+        self_attn_layer = SelfAttention(in_features, config.dropout_rate)
+        self.layers = _get_clones(self_attn_layer, 1)
+        # self.layers_weights = torch.nn.Linear(len(self.layers), 1)
 
         # hidden_size = config.hidden_size
         # if not config.n_hidden_layers:
@@ -101,15 +102,15 @@ class AnaphoricityScorer(torch.nn.Module):
         src = all_mentions.unsqueeze(0)
         causal_mask = torch.triu(torch.ones(all_mentions.shape[0], all_mentions.shape[0], device=all_mentions.device), diagonal=1)==1
         attn_weights = [[]] * len(self.layers)
-        layers_weights = self.layers_weights.weight.softmax(1).transpose(0,1)
+        # layers_weights = self.layers_weights.weight.softmax(1).transpose(0,1)
         for i,layer in enumerate(self.layers):
             src, attn_weights[i], causal_mask = layer(src, causal_mask)
-            attn_weights[i][attn_weights[i]>float("-inf")] *= layers_weights[i]
+            # attn_weights[i][attn_weights[i]>float("-inf")] *= layers_weights[i]
         # for i in range(len(self.self_attn)):
         #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
         #         attn_mask=causal_mask)
         attn_weights = torch.cat(attn_weights, 0)
-        attn_weights = torch.sum(attn_weights, dim=0)
+        attn_weights = torch.mean(attn_weights, dim=0)
         # attn_weights = attn_weights.squeeze(0)
                             #   key_padding_mask=src_key_padding_mask)[0]
         # pair_matrix = self._get_pair_matrix(
