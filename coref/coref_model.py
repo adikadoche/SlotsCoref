@@ -327,7 +327,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         # Encode words with bert
         # words           [n_words, span_emb]
         # cluster_ids     [n_words]
-        words, cluster_ids, cls = self.we(doc, self._bertify(doc))
+        words, cluster_ids = self.we(doc, self._bertify(doc))
 
         # Obtain bilinear scores and leave only top-k antecedents for each word
         # top_rough_scores  [n_words, n_ants]
@@ -349,12 +349,12 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
             # a_scores_batch    [batch_size, n_ants]
         scores = self.a_scorer(
-            all_mentions=words[res.menprop], cls=cls
+            all_mentions=words[res.menprop]
         )
         coref_scores = torch.ones(top_indices.shape[0], scores.shape[1], device=top_indices.device) * EPSILON
         coref_scores[res.menprop] = scores
         coref_scores[:,1:] = coref_scores[:,1:] + scores_mask
-        coref_scores[:,0][coref_scores[:,0]<EPSILON] = EPSILON
+        # coref_scores[:,0][coref_scores[:,0]<EPSILON] = EPSILON
         # res.coref_scores = utils.add_dummy(coref_scores, eps=True)
         # a_scores_lst.append(a_scores_batch)
         res.coref_scores = coref_scores
@@ -633,7 +633,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 attention_mask, device=self.device))[0]
 
         # [n_subwords, bert_emb]
-        return (out[subword_mask_tensor], out[0,0])
+        return out[subword_mask_tensor]
 
     def _build_model(self):
         self.bert, self.tokenizer = bert.load_bert(self.config, self.device)
