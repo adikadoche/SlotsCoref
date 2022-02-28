@@ -442,8 +442,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             random.shuffle(docs_ids)
             pbar = tqdm(docs_ids, unit="docs", ncols=0)
             for doc_num, doc_id in enumerate(pbar):
-                if doc_num > 0:
-                    continue
+                # if doc_num > 0:
+                #     continue
                 doc = train_docs[doc_id]
 
                 for optim in self.optimizers.values():
