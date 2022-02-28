@@ -554,24 +554,24 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 logger.info("eval %s = %s" % (key, str(eval_results[key])))
             if not self.args.is_debug:
                 wandb.log(dict_to_log, step=global_step)
-            if epoch > 15:
-                graph_cluster_eval, graph_mention_eval = self.evaluate_graph(coref_scores, menprops, eval_docs)
-                eval_pg, eval_rg, eval_f1g = graph_cluster_eval.get_prf()
-                eval_pgm, eval_rgm, eval_f1gm = graph_mention_eval.get_prf()
-                eval_results = {
-                        'avg_f1': eval_f1g,
-                        'precision': eval_pg,
-                        'recall': eval_rg,
-                        'mentions_avg_f1': eval_f1gm,
-                        'mentions_precision': eval_pgm,
-                        'mentions_recall': eval_rgm}
-                logger.info("***** Eval Graph results {} *****".format(str(self.epochs_trained)))
-                dict_to_log = {}
-                for key, value in eval_results.items():
-                    dict_to_log['eval_{}'.format(key)] = value
-                    logger.info("eval %s = %s" % (key, str(eval_results[key])))
-                if not self.args.is_debug:
-                    wandb.log(dict_to_log, step=global_step+1)
+            # if epoch > 15:
+            #     graph_cluster_eval, graph_mention_eval = self.evaluate_graph(coref_scores, menprops, eval_docs)
+            #     eval_pg, eval_rg, eval_f1g = graph_cluster_eval.get_prf()
+            #     eval_pgm, eval_rgm, eval_f1gm = graph_mention_eval.get_prf()
+            #     eval_results = {
+            #             'avg_f1': eval_f1g,
+            #             'precision': eval_pg,
+            #             'recall': eval_rg,
+            #             'mentions_avg_f1': eval_f1gm,
+            #             'mentions_precision': eval_pgm,
+            #             'mentions_recall': eval_rgm}
+            #     logger.info("***** Eval Graph results {} *****".format(str(self.epochs_trained)))
+            #     dict_to_log = {}
+            #     for key, value in eval_results.items():
+            #         dict_to_log['eval_{}'.format(key)] = value
+            #         logger.info("eval %s = %s" % (key, str(eval_results[key])))
+            #     if not self.args.is_debug:
+            #         wandb.log(dict_to_log, step=global_step+1)
             if eval_f1 > best_f1:
                 prev_best_f1 = best_f1
                 prev_best_f1_epoch = best_f1_epoch

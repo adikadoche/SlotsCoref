@@ -62,10 +62,11 @@ class AnaphoricityScorer(torch.nn.Module):
                  config: Config):
         super().__init__()
         self.not_cluster = torch.nn.Embedding(1, in_features)
-        self.is_choose = torch.nn.Embedding(1, in_features)
+        # self.is_choose = torch.nn.Embedding(1, in_features)
         self_attn_layer = SelfAttention(in_features, config.dropout_rate)
         self.layers = _get_clones(self_attn_layer, 4)
         # self.layers_weights = torch.nn.Linear(len(self.layers), 1)
+        self.is_choose_classifier = torch.nn.Linear(in_features*2, 1)
 
         # hidden_size = config.hidden_size
         # if not config.n_hidden_layers:
@@ -101,20 +102,22 @@ class AnaphoricityScorer(torch.nn.Module):
                 anaphoricity scores for the pairs + a dummy column
         """
         # [batch_size, n_ants, pair_emb]
-        mentions_with_start_tokens = torch.cat([self.is_choose.weight, self.not_cluster.weight, all_mentions], 0)
+        # mentions_with_start_tokens = torch.cat([self.is_choose.weight, self.not_cluster.weight, all_mentions], 0)
+        mentions_with_start_tokens = torch.cat([self.not_cluster.weight, all_mentions], 0)
         src = mentions_with_start_tokens.unsqueeze(0)
         causal_mask = torch.triu(torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=0)==1
         causal_mask[0,0] = causal_mask[1,0]
-        causal_mask[1,0] = causal_mask[1,1]
-        causal_mask[1,1] = causal_mask[0,0]
+        # causal_mask[1,0] = causal_mask[1,1]
+        # causal_mask[1,1] = causal_mask[0,0]
         attn_weights = [[]] * len(self.layers)
         # layers_weights = self.layers_weights.weight.softmax(1).transpose(0,1)
         for i,layer in enumerate(self.layers):
-            src, attn_weights[i], causal_mask = layer(src, causal_mask)
-            is_choose = attn_weights[i][:,2:,0].sigmoid()
-            attn_weights[i] = attn_weights[i][:, 2:, 1:]
-            is_choose = is_choose.unsqueeze(-1).expand(-1,-1,attn_weights[i].shape[-1])
-            attn_weights[i][causal_mask.unsqueeze(0)[:,2:,1:]>float("-inf")] *= is_choose[causal_mask.unsqueeze(0)[:,2:,1:]>float("-inf")]
+            out, attn_weights[i], causal_mask = layer(src, causal_mask)
+            is_choose = self.is_choose_classifier(torch.cat([src, out],-1)).sigmoid()
+            attn_weights[i] = attn_weights[i][:, 1:, :]
+            is_choose = is_choose[:,1:,:].expand(-1,-1,attn_weights[i].shape[-1])
+            attn_weights[i][causal_mask.unsqueeze(0)[:,1:,:]>float("-inf")] *= is_choose[causal_mask.unsqueeze(0)[:,1:,:]>float("-inf")]
+            src = out
         # for i in range(len(self.self_attn)):
         #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
         #         attn_mask=causal_mask)
