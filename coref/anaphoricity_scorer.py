@@ -21,11 +21,12 @@ class SelfAttention(torch.nn.Module):
         self.to_v = torch.nn.Linear(in_features, in_features)
         self.bsz = 1
         self.num_heads = 1
+        self.dropout_rate = dropout_rate/2
+        self.dropout = torch.nn.Dropout(self.dropout_rate)
 
     def _scaled_dot_product_attention(self,
         src,
         attn_mask = None,
-        dropout_p = 0.0,
     ):
         k,q,v = self.to_k(src), self.to_q(src), self.to_v(src)
         B, Nt, E = q.shape
@@ -34,8 +35,8 @@ class SelfAttention(torch.nn.Module):
         attn = torch.bmm(q, k.transpose(-2, -1))
         if attn_mask is not None:
             attn += attn_mask
-        # if dropout_p > 0.0:
-        #     attn = dropout(attn, p=dropout_p)
+        if self.dropout_rate > 0.0:
+            attn = self.dropout(attn)
         # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
         output = torch.bmm(attn.softmax(dim=-1), v)
         return output, attn
@@ -61,8 +62,7 @@ class AnaphoricityScorer(torch.nn.Module):
                  config: Config):
         super().__init__()
         self_attn_layer = SelfAttention(in_features, config.dropout_rate)
-        self.layers = _get_clones(self_attn_layer, 3)
-        self.dropout = torch.nn.Dropout(config.dropout_rate)
+        self.layers = _get_clones(self_attn_layer, 1)
         # self.layers_weights = torch.nn.Linear(len(self.layers), 1)
 
         # hidden_size = config.hidden_size
@@ -110,7 +110,7 @@ class AnaphoricityScorer(torch.nn.Module):
         #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
         #         attn_mask=causal_mask)
         attn_weights = torch.cat(attn_weights, 0)
-        attn_weights = torch.mean(attn_weights, dim=0)
+        attn_weights = torch.sum(attn_weights, dim=0)
         # attn_weights = attn_weights.squeeze(0)
                             #   key_padding_mask=src_key_padding_mask)[0]
         # pair_matrix = self._get_pair_matrix(
@@ -121,7 +121,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # scores = utils.add_dummy(scores, eps=True)
         # attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])] = 0
 
-        return self.dropout(attn_weights)
+        return attn_weights
 
     def _ffnn(self, x: torch.Tensor) -> torch.Tensor:
         """

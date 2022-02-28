@@ -122,6 +122,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         if docs is None:
             docs = self._get_docs(self.config.__dict__[f"predict_file"])            
         cluster_evaluator = CorefEvaluator()       
+        word_cluster_evaluator = CorefEvaluator()       
         # cluster_graph_evaluator = CorefEvaluator()
         mention_evaluator = MentionEvaluator()
         men_prop_evaluator = MentionEvaluator()
@@ -135,6 +136,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         all_gold_clusters = []
         all_predicted_clusters = []
         all_tokens = []
+        coref_scores = []
+        menprops = []
 
         # with conll.open_(self.config, self.epochs_trained, data_split) \
         #         as (gold_f, pred_f):
@@ -154,18 +157,6 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 s_correct += ((res.span_y[0] == pred_starts) * (res.span_y[1] == pred_ends)).sum().item()
                 s_total += len(pred_starts)
 
-            # if word_level_conll:
-            #     conll.write_conll(doc,
-            #                         [[(i, i + 1) for i in cluster]
-            #                         for cluster in doc["word_clusters"]],
-            #                         gold_f)
-            #     conll.write_conll(doc,
-            #                         [[(i, i + 1) for i in cluster]
-            #                         for cluster in res.word_clusters],
-            #                         pred_f)
-            # else:
-            #     conll.write_conll(doc, doc["span_clusters"], gold_f)
-            #     conll.write_conll(doc, res.span_clusters, pred_f)
 
             # mentions scored
             # w_checker.add_predictions(doc["word_clusters"], res.word_clusters)
@@ -174,6 +165,10 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             # final scores
             # s_checker.add_predictions(doc["span_clusters"], res.span_clusters)
             cluster_evaluator.update([res.span_clusters] ,[doc["span_clusters"]])
+            word_cluster_evaluator.update([[[(res.word_clusters[i][j],res.word_clusters[i][j]) \
+                for j in range(len(res.word_clusters[i]))] for i in range(len(res.word_clusters))]], \
+                    [[[(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for j in range(len(doc['word_clusters'][i]))]\
+                        for i in range(len(doc['word_clusters']))]])
             # cluster_evaluator.update([[[(res.word_clusters[i][j],res.word_clusters[i][j]) \
             # for j in range(len(res.word_clusters[i]))] for i in range(len(res.word_clusters))]], \
             #         [[[(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for j in range(len(doc['word_clusters'][i]))]\
@@ -193,22 +188,11 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             all_predicted_clusters.append(res.span_clusters)
             all_gold_clusters.append(doc["span_clusters"])
             all_tokens.append(doc["cased_words"])
+            coref_scores.append(res.coref_scores.detach().cpu())
+            menprops.append(res.menprop.detach().cpu())
 
             del res
 
-            # pbar.set_description(
-            #     f"{data_split}:"
-            #     f" | WL: "
-            #     f" loss: {running_loss / (pbar.n + 1):<.5f},"
-            #     f" f1: {w_lea[0]:.5f},"
-            #     f" p: {w_lea[1]:.5f},"
-            #     f" r: {w_lea[2]:<.5f}"
-            #     f" | SL: "
-            #     f" sa: {s_correct / s_total:<.5f},"
-            #     f" f1: {s_lea[0]:.5f},"
-            #     f" p: {s_lea[1]:.5f},"
-            #     f" r: {s_lea[2]:<.5f}"
-            # )
         print()
 
         print(f"============ {data_split} EXAMPLES ============")
@@ -220,7 +204,69 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         losses_parts['loss_is_cluster'] = s_correct / s_total
         losses_parts['loss_is_mention'] /= len(docs)
         losses_parts['loss_coref'] /= len(docs)
-        return (running_loss / len(docs), losses_parts, cluster_evaluator, mention_evaluator, men_prop_evaluator)
+        return running_loss / len(docs), losses_parts, cluster_evaluator, word_cluster_evaluator, mention_evaluator, men_prop_evaluator, \
+            (coref_scores, menprops)
+
+    @torch.no_grad()
+    def evaluate_graph(self, 
+                 coref_scores,
+                 menprops,
+                 docs = None
+                 ) -> Tuple[float, Tuple[float, float, float]]:
+        """ Evaluates the modes on the data split provided.
+
+        Args:
+            data_split (str): one of 'dev'/'test'/'train'
+            word_level_conll (bool): if True, outputs conll files on word-level
+
+        Returns:
+            mean loss
+            span-level LEA: f1, precision, recal
+        """
+        self.training = False
+        cluster_graph_evaluator = CorefEvaluator()
+        word_graph_evaluator = MentionEvaluator()
+
+        pbar = tqdm(docs, unit="docs", ncols=0)
+        for ind, doc in enumerate(pbar):
+            weights = torch.zeros(len(doc['cased_words'])+1, len(doc['cased_words'])+1)
+            rows = torch.arange(1,len(doc['cased_words'])+1).unsqueeze(1).repeat(1,coref_scores[ind].shape[1])
+            top_indices_shifted = torch.cat([\
+                torch.zeros(1, dtype=torch.long),\
+                    menprops[ind]+1],-1).unsqueeze(0).repeat(coref_scores[ind].shape[0], 1)
+            weights[rows, top_indices_shifted] = coref_scores[ind].detach().cpu()
+            weights = weights.transpose(0,1)
+            weights[weights<0] = 0
+            real_indices = torch.cat([torch.zeros(1, dtype=torch.long), menprops[ind].detach().cpu()+1])
+            real_indices_rows = real_indices.unsqueeze(1).repeat(1,real_indices.shape[0])
+            real_indices_cols = real_indices.unsqueeze(0).repeat(real_indices.shape[0], 1)
+            weights = weights[real_indices_rows, real_indices_cols]
+            G = nx.from_numpy_matrix(weights.numpy())
+            all_part2 = []
+            part1 = [1,len(menprops[ind])]
+            x=0
+            while len(part1) > 1:
+                split_score, (part1, part2) = nx.minimum_cut(G, 0, part1[-1], capacity='weight')
+                part1 = list(part1)
+                if len(part2)>1:
+                    all_part2.append(sorted([menprops[ind][p2-1].item() for p2 in part2]))
+                    # print(f"split no. {x} with score {split_score}, part1: {part1}, part2: {part2}")
+                G = G.subgraph(part1)
+                x+=1
+            graph_clusters = all_part2
+
+            cluster_graph_evaluator.update([[[(graph_clusters[i][j],graph_clusters[i][j]) \
+            for j in range(len(graph_clusters[i]))] for i in range(len(graph_clusters))]], \
+                    [[[(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for j in range(len(doc['word_clusters'][i]))]\
+                        for i in range(len(doc['word_clusters']))]])
+            word_graph_evaluator.update([(graph_clusters[i][j],graph_clusters[i][j]) \
+                for i in range(len(graph_clusters)) for j in range(len(graph_clusters[i]))], \
+                    [(doc['word_clusters'][i][j],doc['word_clusters'][i][j]) for i in range(len(doc['word_clusters']))\
+                        for j in range(len(doc['word_clusters'][i]))])
+
+        print()
+
+        return cluster_graph_evaluator, word_graph_evaluator
 
     def load_weights(self,
                      path: Optional[str] = None,
@@ -356,33 +402,6 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
             res.span_clusters = self.sp.predict(doc, words, res.word_clusters)
 
-        # weights = torch.zeros(len(words)+1, len(words)+1)
-        # rows = torch.arange(1,len(words)+1).unsqueeze(1).repeat(1,res.coref_scores.shape[1])
-        # top_indices_shifted = torch.cat([\
-        #     torch.zeros(top_indices.shape[0],1, dtype=torch.long),\
-        #         top_indices.detach().cpu()+1],-1)
-        # weights[rows, top_indices_shifted] = res.coref_scores.detach().cpu()
-        # weights = weights.transpose(0,1)
-        # weights[weights<0] = 0
-        # real_indices = torch.cat([torch.zeros(1, dtype=torch.long), res.menprop.detach().cpu()+1])
-        # real_indices_rows = real_indices.unsqueeze(1).repeat(1,real_indices.shape[0])
-        # real_indices_cols = real_indices.unsqueeze(0).repeat(real_indices.shape[0], 1)
-        # weights = weights[real_indices_rows, real_indices_cols]
-        # with open('g.pkl', 'wb') as f:
-        #     pickle.dump(weights, f)
-        # G = nx.from_numpy_matrix(weights.numpy())
-        # all_part2 = []
-        # part1 = [1,len(res.menprop)]
-        # x=0
-        # while len(part1) > 1:
-        #     split_score, (part1, part2) = nx.minimum_cut(G, 0, part1[-1], capacity='weight')
-        #     part1 = list(part1)
-        #     if len(part2)>1:
-        #         all_part2.append(sorted([res.menprop[p2-1].item() for p2 in part2]))
-        #         # print(f"split no. {x} with score {split_score}, part1: {part1}, part2: {part2}")
-        #     G = G.subgraph(part1)
-        #     x+=1
-        # res.graph_clusters = all_part2
         return res
 
     def save_weights(self):
@@ -423,8 +442,8 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
             random.shuffle(docs_ids)
             pbar = tqdm(docs_ids, unit="docs", ncols=0)
             for doc_num, doc_id in enumerate(pbar):
-                # if doc_num > 1400:
-                #     continue
+                if doc_num > 0:
+                    continue
                 doc = train_docs[doc_id]
 
                 for optim in self.optimizers.values():
@@ -480,15 +499,19 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
 
             if epoch % 3 == 2:
                 print("============ TRAIN EXAMPLES ============")
-                _, _, train_cluster_evaluator, train_mention_evaluator, train_men_prop_evaluator = \
+                _, _, train_cluster_evaluator, train_word_cluster_evaluator, train_mention_evaluator, train_men_prop_evaluator, _ = \
                     self.evaluate(docs=train_docs)
                 train_p, train_r, train_f1 = train_cluster_evaluator.get_prf()
+                train_pw, train_rw, train_f1w = train_word_cluster_evaluator.get_prf()
                 train_pm, train_rm, train_f1m = train_mention_evaluator.get_prf()
                 train_pmp, train_rmp, train_f1mp = train_men_prop_evaluator.get_prf()
                 dict_to_log = {}
                 dict_to_log['Train Precision'] = train_p
                 dict_to_log['Train Recall'] = train_r
                 dict_to_log['Train F1'] = train_f1
+                dict_to_log['Train Word Precision'] = train_pw
+                dict_to_log['Train Word Recall'] = train_rw
+                dict_to_log['Train Word F1'] = train_f1w
                 dict_to_log['Train Mention Precision'] = train_pm
                 dict_to_log['Train Mention Recall'] = train_rm
                 dict_to_log['Train Mention F1'] = train_f1m
@@ -501,15 +524,20 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                     (train_f1, train_p, train_r), (train_f1m, train_pm, train_rm), (train_f1mp, train_pmp, train_rmp)))
 
             logger.info("***** Running evaluation {} *****".format(str(self.epochs_trained)))
-            eval_loss, eval_loss_parts, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
+            eval_loss, eval_loss_parts, eval_cluster_evaluator, eval_word_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator, \
+                (coref_scores, menprops) = \
                 self.evaluate(docs=eval_docs)
             eval_p, eval_r, eval_f1 = eval_cluster_evaluator.get_prf()
             eval_pm, eval_rm, eval_f1m = eval_men_evaluator.get_prf()
             eval_pmp, eval_rmp, eval_f1mp = eval_men_prop_evaluator.get_prf()
+            eval_pw, eval_rw, eval_f1w = eval_word_cluster_evaluator.get_prf()
             eval_results = {'loss': eval_loss,
                     'avg_f1': eval_f1,
                     'precision': eval_p,
                     'recall': eval_r,  
+                    'word_avg_f1': eval_f1w,
+                    'word_precision': eval_pw,
+                    'word_recall': eval_rw,  
                     'mentions_avg_f1': eval_f1m,
                     'mentions_precision': eval_pm,
                     'mentions_recall': eval_rm,  
@@ -523,6 +551,24 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
                 logger.info("eval %s = %s" % (key, str(eval_results[key])))
             if not self.args.is_debug:
                 wandb.log(dict_to_log, step=global_step)
+            if epoch > 15:
+                graph_cluster_eval, graph_mention_eval = self.evaluate_graph(coref_scores, menprops, eval_docs)
+                eval_pg, eval_rg, eval_f1g = graph_cluster_eval.get_prf()
+                eval_pgm, eval_rgm, eval_f1gm = graph_mention_eval.get_prf()
+                eval_results = {
+                        'avg_f1': eval_f1g,
+                        'precision': eval_pg,
+                        'recall': eval_rg,
+                        'mentions_avg_f1': eval_f1gm,
+                        'mentions_precision': eval_pgm,
+                        'mentions_recall': eval_rgm}
+                logger.info("***** Eval Graph results {} *****".format(str(self.epochs_trained)))
+                dict_to_log = {}
+                for key, value in eval_results.items():
+                    dict_to_log['eval_{}'.format(key)] = value
+                    logger.info("eval %s = %s" % (key, str(eval_results[key])))
+                if not self.args.is_debug:
+                    wandb.log(dict_to_log, step=global_step+1)
             if eval_f1 > best_f1:
                 prev_best_f1 = best_f1
                 prev_best_f1_epoch = best_f1_epoch
