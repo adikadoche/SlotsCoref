@@ -35,6 +35,7 @@ def parse_args():
 #     argparser.add_argument('--num_junk_queries', default=200, type=int,
 #                         help="Number of query slots")
 #     argparser.add_argument('--random_queries', action='store_true')
+    argparser.add_argument('--seed', type=int, default=2020)
     argparser.add_argument('--max_eval_print', type=int, default=5)
     argparser.add_argument("--is_debug", action="store_true", help="Whether to run profiling.")
     argparser.add_argument("--no_cuda", action="store_true", help="Whether not to use CUDA when available")

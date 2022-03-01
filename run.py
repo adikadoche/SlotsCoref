@@ -71,7 +71,7 @@ if __name__ == "__main__":
         wandb.init(project='coref-detr', entity='adizicher', name=args.run_name)
 
     if args.is_debug:
-        vis_devices="2"
+        vis_devices="0"
         if args.no_cuda:
             args.n_gpu = 0
         else:
@@ -104,7 +104,7 @@ if __name__ == "__main__":
         for key, val in vars(args).items():
             logger.info(f"{key} - {val}")
 
-    seed(2020)
+    seed(args.seed)
     model = CorefModel(args, args.config_file, args.model_type)
 
     if args.batch_size:
