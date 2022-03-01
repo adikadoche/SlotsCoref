@@ -61,7 +61,7 @@ if __name__ == "__main__":
     model.load_weights(path=args.weights, map_location="cpu",
                        ignore={"bert_optimizer", "general_optimizer",
                                "bert_scheduler", "general_scheduler"})
-    model.training = False
+    model.eval()
 
     with jsonlines.open(args.input_file, mode="r") as input_data:
         docs = [build_doc(doc, model) for doc in input_data]
