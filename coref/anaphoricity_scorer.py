@@ -21,7 +21,7 @@ class SelfAttention(torch.nn.Module):
         self.to_v = torch.nn.Linear(in_features, in_features)
         self.bsz = 1
         self.num_heads = 1
-        self.dropout_rate = dropout_rate/2
+        self.dropout_rate = 0.0
         self.dropout = torch.nn.Dropout(self.dropout_rate)
 
     def _scaled_dot_product_attention(self,
@@ -64,8 +64,8 @@ class AnaphoricityScorer(torch.nn.Module):
         # self.not_cluster = torch.nn.Embedding(1, in_features)
         # self.is_choose = torch.nn.Embedding(1, in_features)
         self_attn_layer = SelfAttention(in_features, config.dropout_rate)
-        self.layers = _get_clones(self_attn_layer, 4)
-        self.relu = torch.nn.ReLU(inplace=False)
+        self.layers = _get_clones(self_attn_layer, 1)
+        # self.relu = torch.nn.ReLU(inplace=False)
         # self.layers_weights = torch.nn.Linear(len(self.layers), 1)
         # self.is_choose_classifier = torch.nn.Linear(in_features*2, 1)
 
@@ -117,7 +117,7 @@ class AnaphoricityScorer(torch.nn.Module):
             src, attn_weights[i], causal_mask = layer(src, causal_mask)
             # is_choose = self.is_choose_classifier(torch.cat([src, out],-1)).sigmoid()
             attn_weights[i] = attn_weights[i][:, 1:, :]
-            attn_weights[i] = self.relu(attn_weights[i]) + causal_mask[1:,:].unsqueeze(0)
+            # attn_weights[i] = self.relu(attn_weights[i]) + causal_mask[1:,:].unsqueeze(0)
         # for i in range(len(self.self_attn)):
         #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
         #         attn_mask=causal_mask)
