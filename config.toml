@@ -54,7 +54,7 @@ max_span_len = 64
 # Controls how many pairs should be preserved per mention
 # after applying rough scoring.
 rough_k = 50
-topk_lambda = 0.3
+topk_lambda = 0.5
 
 
 # Training settings ==================
