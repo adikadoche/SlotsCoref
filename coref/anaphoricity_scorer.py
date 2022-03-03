@@ -35,8 +35,8 @@ class SelfAttention(torch.nn.Module):
         attn = torch.bmm(q, k.transpose(-2, -1))
         if attn_mask is not None:
             attn += attn_mask
-        # if self.dropout_rate > 0.0:
-        #     attn = self.dropout(attn)
+        if self.dropout_rate > 0.0:
+            attn = self.dropout(attn)
         # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
         output = torch.bmm(attn.softmax(dim=-1), v)
         return output, attn
@@ -52,7 +52,7 @@ class SelfAttention(torch.nn.Module):
         attn_output_weights = attn_output_weights.view(self.bsz, self.num_heads, src.shape[1], src.shape[1])
         src, attn_weights = attn_output.transpose(0,1), attn_output_weights.sum(dim=1) / self.num_heads
 
-        return src, self.dropout(attn_weights), attn_mask
+        return src, attn_weights, attn_mask
 
 
 class AnaphoricityScorer(torch.nn.Module):
@@ -64,7 +64,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # self.not_cluster = torch.nn.Embedding(1, in_features)
         # self.is_choose = torch.nn.Embedding(1, in_features)
         self_attn_layer = SelfAttention(in_features, config.dropout_rate)
-        self.layers = _get_clones(self_attn_layer, 1)
+        self.layers = _get_clones(self_attn_layer, 4)
         # self.relu = torch.nn.ReLU(inplace=False)
         # self.layers_weights = torch.nn.Linear(len(self.layers), 1)
         # self.is_choose_classifier = torch.nn.Linear(in_features*2, 1)
@@ -116,7 +116,10 @@ class AnaphoricityScorer(torch.nn.Module):
         for i,layer in enumerate(self.layers):
             src, attn_weights[i], causal_mask = layer(src, causal_mask)
             # is_choose = self.is_choose_classifier(torch.cat([src, out],-1)).sigmoid()
-            attn_weights[i] = attn_weights[i][:, 1:, :]
+            cls_score = attn_weights[i][:,1:,0].sigmoid()
+            attn_weights[i] = attn_weights[i][:, 1:, 1:] + causal_mask[1:,1:]
+            attn_weights[i][:,0,0]=0
+            attn_weights[i] = attn_weights[i].softmax(dim=-1) * (1-cls_score)
             # attn_weights[i] = self.relu(attn_weights[i]) + causal_mask[1:,:].unsqueeze(0)
         # for i in range(len(self.self_attn)):
         #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
@@ -135,7 +138,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # scores = utils.add_dummy(scores, eps=True)
         # attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])] = 0
 
-        return attn_weights
+        return attn_weights + causal_mask[1:,1:]
 
     def _ffnn(self, x: torch.Tensor) -> torch.Tensor:
         """
