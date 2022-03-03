@@ -21,7 +21,7 @@ class SelfAttention(torch.nn.Module):
         self.to_v = torch.nn.Linear(in_features, in_features)
         self.bsz = 1
         self.num_heads = 1
-        self.dropout_rate = 0.0
+        self.dropout_rate = self.dropout_rate/2
         self.dropout = torch.nn.Dropout(self.dropout_rate)
 
     def _scaled_dot_product_attention(self,
@@ -35,8 +35,8 @@ class SelfAttention(torch.nn.Module):
         attn = torch.bmm(q, k.transpose(-2, -1))
         if attn_mask is not None:
             attn += attn_mask
-        if self.dropout_rate > 0.0:
-            attn = self.dropout(attn)
+        # if self.dropout_rate > 0.0:
+        #     attn = self.dropout(attn)
         # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
         output = torch.bmm(attn.softmax(dim=-1), v)
         return output, attn
@@ -52,7 +52,7 @@ class SelfAttention(torch.nn.Module):
         attn_output_weights = attn_output_weights.view(self.bsz, self.num_heads, src.shape[1], src.shape[1])
         src, attn_weights = attn_output.transpose(0,1), attn_output_weights.sum(dim=1) / self.num_heads
 
-        return src, attn_weights, attn_mask
+        return src, self.dropout(attn_weights), attn_mask
 
 
 class AnaphoricityScorer(torch.nn.Module):

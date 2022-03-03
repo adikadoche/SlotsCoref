@@ -19,7 +19,7 @@ echo ""
 echo $LOG_PATH
 
 PYTHONUNBUFFERED=1 nohup /home/gamir/adiz/miniconda3/envs/torchGPU/bin/python -u \
-  run.py train longformer --seed 42 |  tee ${LOG_PATH}  &
+  run.py train roberta --seed 42 |  tee ${LOG_PATH}  &
 
 # PYTHONUNBUFFERED=1 nohup /home/gamir/adiz/miniconda3/envs/torchGPU/bin/python -u \
 #   run.py \
