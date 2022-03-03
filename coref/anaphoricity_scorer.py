@@ -33,10 +33,10 @@ class SelfAttention(torch.nn.Module):
         q = q / math.sqrt(E)
         # (B, Nt, E) x (B, E, Ns) -> (B, Nt, Ns)
         attn = torch.bmm(q, k.transpose(-2, -1))
-        if attn_mask is not None:
-            attn += attn_mask
         if self.dropout_rate > 0.0:
             attn = self.dropout(attn)
+        if attn_mask is not None:
+            attn += attn_mask
         # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
         output = torch.bmm(attn.softmax(dim=-1), v)
         return output, attn
@@ -107,7 +107,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # mentions_with_start_tokens = torch.cat([self.is_choose.weight, self.not_cluster.weight, all_mentions], 0)
         mentions_with_start_tokens = torch.cat([cls.unsqueeze(0), all_mentions], 0)
         src = mentions_with_start_tokens.unsqueeze(0)
-        causal_mask = torch.triu(torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=0)==1
+        causal_mask = torch.triu(torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=1)==1
         causal_mask[0,0] = causal_mask[1,0]
         # causal_mask[1,0] = causal_mask[1,1]
         # causal_mask[1,1] = causal_mask[0,0]
@@ -120,7 +120,7 @@ class AnaphoricityScorer(torch.nn.Module):
             cls_score = attn_weights[i][:,1:,0].sigmoid()
             cls_scores = cls_scores * cls_score
             attn_weights[i] = attn_weights[i][:, 1:, 1:] + causal_mask[1:,1:]
-            attn_weights[i][:,0,0]=0
+            # attn_weights[i][:,0,0]=0
             attn_weights[i] = attn_weights[i].softmax(dim=-1) * (1-cls_score)
             # attn_weights[i] = self.relu(attn_weights[i]) + causal_mask[1:,:].unsqueeze(0)
         # for i in range(len(self.self_attn)):
