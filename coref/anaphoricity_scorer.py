@@ -21,7 +21,7 @@ class SelfAttention(torch.nn.Module):
         self.to_v = torch.nn.Linear(in_features, in_features)
         self.bsz = 1
         self.num_heads = 1
-        self.dropout_rate = self.dropout_rate/2
+        self.dropout_rate = dropout_rate/2
         self.dropout = torch.nn.Dropout(self.dropout_rate)
 
     def _scaled_dot_product_attention(self,
