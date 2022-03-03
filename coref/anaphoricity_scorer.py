@@ -112,7 +112,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # causal_mask[1,0] = causal_mask[1,1]
         # causal_mask[1,1] = causal_mask[0,0]
         attn_weights = [[]] * len(self.layers)
-        cls_scores = torch.zeros(1, device=src.device)
+        cls_scores = torch.ones(1, device=src.device)
         # layers_weights = self.layers_weights.weight.softmax(1).transpose(0,1)
         for i,layer in enumerate(self.layers):
             src, attn_weights[i], causal_mask = layer(src, causal_mask)
