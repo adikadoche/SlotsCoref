@@ -112,11 +112,13 @@ class AnaphoricityScorer(torch.nn.Module):
         # causal_mask[1,0] = causal_mask[1,1]
         # causal_mask[1,1] = causal_mask[0,0]
         attn_weights = [[]] * len(self.layers)
+        cls_scores = torch.zeros(1, device=src.device)
         # layers_weights = self.layers_weights.weight.softmax(1).transpose(0,1)
         for i,layer in enumerate(self.layers):
             src, attn_weights[i], causal_mask = layer(src, causal_mask)
             # is_choose = self.is_choose_classifier(torch.cat([src, out],-1)).sigmoid()
             cls_score = attn_weights[i][:,1:,0].sigmoid()
+            cls_scores = cls_scores * cls_score
             attn_weights[i] = attn_weights[i][:, 1:, 1:] + causal_mask[1:,1:]
             attn_weights[i][:,0,0]=0
             attn_weights[i] = attn_weights[i].softmax(dim=-1) * (1-cls_score)
@@ -138,7 +140,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # scores = utils.add_dummy(scores, eps=True)
         # attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])] = 0
 
-        return attn_weights + causal_mask[1:,1:]
+        return torch.cat([cls_scores.transpose(0,1), attn_weights], dim=-1) + causal_mask[1:,:]
 
     def _ffnn(self, x: torch.Tensor) -> torch.Tensor:
         """
