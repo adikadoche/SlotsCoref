@@ -121,9 +121,9 @@ class AnaphoricityScorer(torch.nn.Module):
             cls_score = attn_weights[i][:,1:,0].sigmoid()
             cls_scores = cls_scores * cls_score
             attn_weights[i] = attn_weights[i][:, 1:, 1:] + causal_mask[1:,1:]
-            # attn_weights[i][:,0,0]=0
-            attn_weights[i] = attn_weights[i].softmax(dim=-1) * (1-cls_score)
             attn_weights[i] = attn_weights[i] + final_mask[1:,1:]
+            attn_weights[i][:,0,0]=0
+            attn_weights[i] = attn_weights[i].softmax(dim=-1) * (1-cls_score)
             # attn_weights[i] = self.relu(attn_weights[i]) + causal_mask[1:,:].unsqueeze(0)
         # for i in range(len(self.self_attn)):
         #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
