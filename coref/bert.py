@@ -25,8 +25,11 @@ def get_subwords_batches(doc: Doc,
     batch_size = config.bert_window_size - 2  # to save space for CLS and SEP
 
     subwords: List[str] = doc["subwords"]
+    # subwords, speaker_mask, new_word_id, longest_speaker_len = add_speaker(subwords, doc['speaker'], doc['word_id'], tok)
     subwords_batches = []
     start, end = 0, 0
+    # doc['word_id'] = new_word_id
+    # batch_size -= longest_speaker_len
 
     while end < len(subwords):
         end = min(end + batch_size, len(subwords))
@@ -51,6 +54,31 @@ def get_subwords_batches(doc: Doc,
         start += length
 
     return np.array(subwords_batches)
+
+def get_tokenized_speaker(speaker, tok):
+    SPEAKER_START = ' <speaker>' 
+    SPEAKER_END = ' </speaker>'  
+    return tok.tokenize(SPEAKER_START + " " + speaker + SPEAKER_END, add_special_tokens=False)
+
+def add_speaker(subwords, speakers, word_id, tok: AutoTokenizer):
+    longest_speaker_len = 0
+    speaker_mask = []
+    new_word_id = word_id.copy()
+    subword_index = len(subwords) - 1
+    for i in reversed(range(len(speakers))):
+        while word_id[subword_index] == i:
+            speaker_mask.append(0)
+            subword_index -= 1
+        if i==0 or speakers[i] != speakers[i-1]:
+            speaker_tokens = get_tokenized_speaker(speakers[i], tok)
+            if len(speaker_tokens) > longest_speaker_len:
+                longest_speaker_len = len(speaker_tokens)
+            j = 0 if i == 0 else subword_index+1
+            subwords[j:j] = speaker_tokens
+            new_word_id[j:j] = [i] * len(speaker_tokens)
+            speaker_mask += [1]*len(speaker_tokens)
+    speaker_mask = list(reversed(speaker_mask))
+    return subwords, speaker_mask, new_word_id, longest_speaker_len
 
 
 def load_bert(config: Config, device) -> Tuple[AutoModel, AutoTokenizer]:
