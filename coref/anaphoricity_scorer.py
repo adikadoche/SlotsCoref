@@ -138,6 +138,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # is_choose = attn_weights[:,2:,0].sigmoid()
         # choose_attn_weights = is_choose.unsqueeze(-1) * attn_weights[:,2:,1:]
         attn_weights = torch.sum(attn_weights, dim=0)
+        attn_weights[:,0] = attn_weights[:,0]/len(self.layers)
         # attn_weights[:,0] = attn_weights[:,0] / len(self.layers)
         # attn_weights = attn_weights.squeeze(0)
                             #   key_padding_mask=src_key_padding_mask)[0]
@@ -150,7 +151,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])] = 0
 
         # return torch.cat([(cls_scores/len(self.layers)).transpose(0,1), attn_weights], dim=-1) + final_mask[1:,:]
-        return self.dropout(attn_weights[:,1:])# + final_mask[1:]
+        return self.dropout(attn_weights)# + final_mask[1:]
 
     def _ffnn(self, x: torch.Tensor) -> torch.Tensor:
         """
