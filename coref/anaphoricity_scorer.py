@@ -14,15 +14,14 @@ def _get_clones(module, N):
 class SelfAttention(torch.nn.Module):
     def __init__(self,
                  in_features: int,
-                 dropout_rate):
+                 dropout_rate=0.0):
         super().__init__()
         self.to_q = torch.nn.Linear(in_features, in_features)
         self.to_k = torch.nn.Linear(in_features, in_features)
         self.to_v = torch.nn.Linear(in_features, in_features)
         self.bsz = 1
         self.num_heads = 1
-        self.dropout_rate = dropout_rate/2
-        self.dropout = torch.nn.Dropout(self.dropout_rate)
+        self.dropout_rate=dropout_rate
 
     def _scaled_dot_product_attention(self,
         src,
@@ -61,8 +60,10 @@ class AnaphoricityScorer(torch.nn.Module):
                  in_features: int,
                  config: Config):
         super().__init__()
-        self_attn_layer = SelfAttention(in_features, config.dropout_rate)
+        self_attn_layer = SelfAttention(in_features)
         self.layers = _get_clones(self_attn_layer, 1)
+        self.dropout_rate = config.dropout_rate/2
+        self.dropout = torch.nn.Dropout(self.dropout_rate)
         # self.layers_weights = torch.nn.Linear(len(self.layers), 1)
 
         # hidden_size = config.hidden_size
@@ -100,10 +101,11 @@ class AnaphoricityScorer(torch.nn.Module):
                 anaphoricity scores for the pairs + a dummy column
         """
         # [batch_size, n_ants, pair_emb]
-        mentions_with_cls = torch.cat([cls.unsqueeze(0), all_mentions], 0)
+        # mentions_with_cls = torch.cat([cls.unsqueeze(0), all_mentions], 0)
+        mentions_with_cls = all_mentions
         src = mentions_with_cls.unsqueeze(0)
-        causal_mask = torch.triu(torch.ones(mentions_with_cls.shape[0], mentions_with_cls.shape[0], device=all_mentions.device), diagonal=0)==1
-        causal_mask[0,0] = causal_mask[1,0]
+        causal_mask = torch.triu(torch.ones(mentions_with_cls.shape[0], mentions_with_cls.shape[0], device=all_mentions.device), diagonal=1)==1
+        # causal_mask[0,0] = causal_mask[1,0]
         attn_weights = [[]] * len(self.layers)
         # layers_weights = self.layers_weights.weight.softmax(1).transpose(0,1)
         for i,layer in enumerate(self.layers):
@@ -113,7 +115,7 @@ class AnaphoricityScorer(torch.nn.Module):
         #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
         #         attn_mask=causal_mask)
         attn_weights = torch.cat(attn_weights, 0)
-        attn_weights = torch.sum(attn_weights, dim=0)
+        attn_weights = torch.mean(attn_weights, dim=0)
         # attn_weights = attn_weights.squeeze(0)
                             #   key_padding_mask=src_key_padding_mask)[0]
         # pair_matrix = self._get_pair_matrix(
@@ -124,7 +126,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # scores = utils.add_dummy(scores, eps=True)
         # attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])] = 0
 
-        return attn_weights[1:]
+        return self.dropout(attn_weights)
 
     def _ffnn(self, x: torch.Tensor) -> torch.Tensor:
         """
