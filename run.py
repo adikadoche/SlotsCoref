@@ -118,6 +118,7 @@ def save_weights(model, optimizers, schedulers):
     savedict = {name: module.state_dict() for name, module in to_save}
     savedict["epochs_trained"] = model.epochs_trained  # type: ignore
     torch.save(savedict, path)
+    return path
 
 def _get_docs(path: str, model):
     basename = os.path.basename(path)
@@ -173,7 +174,7 @@ def train(model, train_docs, eval_docs, coref_criterion, span_criterion, optimiz
             del res
 
             (c_loss + s_loss).backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
             recent_losses.append((c_loss + s_loss).item())
 
             running_c_loss += c_loss.item()
@@ -281,11 +282,11 @@ def train(model, train_docs, eval_docs, coref_criterion, span_criterion, optimiz
         if eval_f1 > best_f1:
             prev_best_f1 = best_f1
             prev_best_f1_epoch = best_f1_epoch
-            save_weights(model, optimizers, schedulers)
+            saved_path = save_weights(model, optimizers, schedulers)
             print(f'previous checkpoint with f1 {prev_best_f1} was {prev_best_f1_epoch}')
             best_f1 = eval_f1
             best_f1_epoch = epoch
-            print(f'saved checkpoint with f1 {best_f1} in step {best_f1_epoch} to {model.config.output_dir}')
+            print(f'saved checkpoint with f1 {best_f1} in step {best_f1_epoch} to {saved_path}')
             path_to_remove = os.path.join(model.config.output_dir,
                                 f"{model.config.section}"
                                 f"_e{prev_best_f1_epoch}.pt")
@@ -293,8 +294,8 @@ def train(model, train_docs, eval_docs, coref_criterion, span_criterion, optimiz
                 os.remove(path_to_remove)
                 print(f'removed checkpoint with f1 {prev_best_f1} from {path_to_remove}')
         else:
-            save_weights(model, optimizers, schedulers)
-            print(f'saved checkpoint in epoch {epoch}')
+            saved_path = save_weights(model, optimizers, schedulers)
+            print(f'saved checkpoint in epoch {epoch} to {saved_path}')
             path_to_remove = os.path.join(model.config.output_dir,
                                 f"{model.config.section}"
                                 f"_e{last_saved_epoch}.pt")
