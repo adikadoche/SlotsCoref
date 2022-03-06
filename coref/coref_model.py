@@ -351,7 +351,7 @@ class CorefModel:  # pylint: disable=too-many-instance-attributes
         scores = self.a_scorer(
             all_mentions=words[res.menprop], cls=cls
         )
-        coref_scores = torch.ones(top_indices.shape[0], scores.shape[1], device=top_indices.device) * EPSILON
+        coref_scores = torch.zeros(top_indices.shape[0], scores.shape[1], device=top_indices.device) * EPSILON
         coref_scores[res.menprop] = scores
         coref_scores = coref_scores + scores_mask
         # coref_scores[:,0][coref_scores[:,0]<EPSILON] = EPSILON

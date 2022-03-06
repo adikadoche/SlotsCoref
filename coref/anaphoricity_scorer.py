@@ -14,14 +14,15 @@ def _get_clones(module, N):
 class SelfAttention(torch.nn.Module):
     def __init__(self,
                  in_features: int,
-                 dropout_rate=0.0):
+                 dropout_rate):
         super().__init__()
         self.to_q = torch.nn.Linear(in_features, in_features)
         self.to_k = torch.nn.Linear(in_features, in_features)
         self.to_v = torch.nn.Linear(in_features, in_features)
         self.bsz = 1
         self.num_heads = 1
-        self.dropout_rate=dropout_rate
+        self.dropout_rate = dropout_rate/2
+        self.dropout = torch.nn.Dropout(self.dropout_rate)
 
     def _scaled_dot_product_attention(self,
         src,
@@ -60,10 +61,8 @@ class AnaphoricityScorer(torch.nn.Module):
                  in_features: int,
                  config: Config):
         super().__init__()
-        self_attn_layer = SelfAttention(in_features)
+        self_attn_layer = SelfAttention(in_features, config.dropout_rate)
         self.layers = _get_clones(self_attn_layer, 1)
-        self.dropout_rate = config.dropout_rate/2
-        self.dropout = torch.nn.Dropout(self.dropout_rate)
         # self.layers_weights = torch.nn.Linear(len(self.layers), 1)
 
         # hidden_size = config.hidden_size
@@ -126,7 +125,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # scores = utils.add_dummy(scores, eps=True)
         # attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])] = 0
 
-        return self.dropout(attn_weights)
+        return attn_weights
 
     def _ffnn(self, x: torch.Tensor) -> torch.Tensor:
         """
