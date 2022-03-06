@@ -17,7 +17,7 @@
                 // "--is_debug",
                 // "--data_split", "dev",
                 // "--weights", "/home/gamir/adiz/datasets/wl-ontonotes/2022.02.22_14.58/2022.02.22_17.39/roberta_e20_2022.02.22_19.57.pt" //roberta_e20_2022.02.22_19.57  //roberta_e18_2022.02.22_19.43
-                // "--weights", "/home/gamir/adiz/Code/runs/wl-coref/weights/03_03_2022_19_12_45_comit/roberta_e0.pt"
+                // "--weights", "/home/gamir/adiz/Code/runs/wl-coref/weights/03_04_2022_11_05_45_sidebuside/roberta_e0.pt"
             ]
         }
     ]

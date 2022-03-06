@@ -75,7 +75,7 @@ lr = 3e-4
 num_train_epochs = 20
 
 # Controls the weight of binary cross entropy loss added to nlml loss
-bce_loss_weight = 0.5
+bce_loss_weight = 1.0
 
 # The directory that will contain conll prediction files
 conll_log_dir = "/home/gamir/adiz/datasets/wl-ontonotes/conll_logs"

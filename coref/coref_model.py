@@ -130,13 +130,13 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         scores = self.a_scorer(
             all_mentions=words[res.menprop], cls=cls
         )
-        coref_scores = torch.ones(top_indices.shape[0], scores.shape[1], device=top_indices.device) * EPSILON
+        coref_scores = torch.zeros(top_indices.shape[0], scores.shape[1], device=top_indices.device)
         coref_scores[res.menprop] = scores
-        coref_scores[:,1:] = coref_scores[:,1:] + scores_mask
+        coref_scores = coref_scores + scores_mask
         # coref_scores[:,0][coref_scores[:,0]<EPSILON] = EPSILON
-        # res.coref_scores = utils.add_dummy(coref_scores, eps=True)
+        res.coref_scores = utils.add_dummy(coref_scores, eps=True)
         # a_scores_lst.append(a_scores_batch)
-        res.coref_scores = coref_scores
+        # res.coref_scores = coref_scores
 
 
         # coref_scores  [n_spans, n_ants]
@@ -215,7 +215,6 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         return (out[subword_mask_tensor], out[0,0])
 
     def _clusterize(self, doc: Doc, scores: torch.Tensor, top_indices: torch.Tensor):
-        scores[:,0][scores[:,0]<EPSILON] = EPSILON
         antecedents = scores.argmax(dim=1) - 1
         not_dummy = antecedents >= 0
         coref_span_heads = torch.arange(0, len(scores))[not_dummy]

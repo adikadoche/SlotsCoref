@@ -23,7 +23,7 @@ class CorefLoss(torch.nn.Module):
         zero_notinf_inputs = input_[target==0]
         zero_notinf_inputs = zero_notinf_inputs[zero_notinf_inputs>float("-inf")]
         return (self._nlml(input_, target)
-                # + self._bce(zero_notinf_inputs, torch.zeros_like(zero_notinf_inputs)) * self._bce_weight
+                + self._bce(zero_notinf_inputs, torch.zeros_like(zero_notinf_inputs)) * self._bce_weight
                 + self._bce(input_, target) * self._bce_weight)
 
     def _bce(self,
