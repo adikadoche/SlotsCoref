@@ -174,7 +174,7 @@ def train(model, train_docs, eval_docs, coref_criterion, span_criterion, optimiz
             del res
 
             (c_loss + s_loss).backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             recent_losses.append((c_loss + s_loss).item())
 
             running_c_loss += c_loss.item()
