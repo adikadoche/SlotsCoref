@@ -4,6 +4,7 @@ from typing import List, Tuple
 
 import numpy as np                                 # type: ignore
 from transformers import AutoModel, AutoTokenizer  # type: ignore
+import copy
 
 from coref.config import Config
 from coref.const import Doc
@@ -22,22 +23,21 @@ def get_subwords_batches(doc: Doc,
     Returns:
         batches of bert tokens [n_batches, batch_size]
     """
-    batch_size = config.bert_window_size - 2  # to save space for CLS and SEP
-
-    subwords: List[str] = doc["subwords"]
-    # subwords, speaker_mask, new_word_id, longest_speaker_len = add_speaker(subwords, doc['speaker'], doc['word_id'], tok)
+    subwords: List[str] = copy.deepcopy(doc["subwords"])
+    subwords, speakerdoc_mask, new_word_id = add_speaker(subwords, doc, tok)
+    doc_type = tok.tokenize(" <doc> " + doc["document_id"][:2] + " </doc>", add_special_tokens=False)
+    subwords, speakerdoc_mask, new_word_id = insert_substring(subwords, doc_type, 0, speakerdoc_mask, new_word_id)
     subwords_batches = []
     start, end = 0, 0
-    # doc['word_id'] = new_word_id
-    # batch_size -= longest_speaker_len
+    batch_size = config.bert_window_size - 2 # 2 to save space for CLS and SEP
 
     while end < len(subwords):
         end = min(end + batch_size, len(subwords))
 
         # Move back till we hit a sentence end
         if end < len(subwords):
-            sent_id = doc["sent_id"][doc["word_id"][end]]
-            while end and doc["sent_id"][doc["word_id"][end - 1]] == sent_id:
+            sent_id = doc['sent_id'][new_word_id[end]]
+            while end and doc['sent_id'][new_word_id[end - 1]] == sent_id:
                 end -= 1
 
         length = end - start
@@ -52,21 +52,35 @@ def get_subwords_batches(doc: Doc,
         subwords_batches.append([tok.convert_tokens_to_ids(token)
                                  for token in batch])
         start += length
+        
+        if end < len(subwords):
+            if speakerdoc_mask[start] == 0:
+                subwords, speakerdoc_mask, new_word_id = \
+                    insert_substring(subwords, get_tokenized_speaker(doc['speaker'][new_word_id[start]], tok), start, speakerdoc_mask, new_word_id)
+            subwords, speakerdoc_mask, new_word_id = \
+                insert_substring(subwords, doc_type, start, speakerdoc_mask, new_word_id)
 
-    return np.array(subwords_batches)
+    return np.array(subwords_batches), speakerdoc_mask
+
+def insert_substring(subwords, substring, index, speakerdoc_mask, word_id):
+    subwords[index:index] = substring
+    speakerdoc_mask[index:index] = [1]*len(substring)
+    word_id[index:index] = [word_id[index]] * len(substring)
+    return subwords, speakerdoc_mask, word_id
 
 def get_tokenized_speaker(speaker, tok):
     SPEAKER_START = ' <speaker>' 
     SPEAKER_END = ' </speaker>'  
     return tok.tokenize(SPEAKER_START + " " + speaker + SPEAKER_END, add_special_tokens=False)
 
-def add_speaker(subwords, speakers, word_id, tok: AutoTokenizer):
+def add_speaker(subwords, doc, tok: AutoTokenizer):
     longest_speaker_len = 0
     speaker_mask = []
-    new_word_id = word_id.copy()
+    speakers = doc['speaker']
+    new_word_id = copy.deepcopy(doc['word_id'])
     subword_index = len(subwords) - 1
     for i in reversed(range(len(speakers))):
-        while word_id[subword_index] == i:
+        while doc['word_id'][subword_index] == i:
             speaker_mask.append(0)
             subword_index -= 1
         if i==0 or speakers[i] != speakers[i-1]:
@@ -78,7 +92,7 @@ def add_speaker(subwords, speakers, word_id, tok: AutoTokenizer):
             new_word_id[j:j] = [i] * len(speaker_tokens)
             speaker_mask += [1]*len(speaker_tokens)
     speaker_mask = list(reversed(speaker_mask))
-    return subwords, speaker_mask, new_word_id, longest_speaker_len
+    return subwords, speaker_mask, new_word_id
 
 
 def load_bert(config: Config, device) -> Tuple[AutoModel, AutoTokenizer]:

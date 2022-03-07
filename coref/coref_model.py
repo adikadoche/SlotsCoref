@@ -191,13 +191,14 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
     # ========================================================= Private methods
 
     def _bertify(self, doc: Doc) -> torch.Tensor:
-        subwords_batches = bert.get_subwords_batches(doc, self.config,
+        subwords_batches, speakerdoc_mask = bert.get_subwords_batches(doc, self.config,
                                                      self.tokenizer)
 
         special_tokens = np.array([self.tokenizer.cls_token_id,
                                    self.tokenizer.sep_token_id,
                                    self.tokenizer.pad_token_id])
         subword_mask = ~(np.isin(subwords_batches, special_tokens))
+        subword_mask[subword_mask] = np.array(speakerdoc_mask) == 0
 
         subwords_batches_tensor = torch.tensor(subwords_batches,
                                                device=self.device,
