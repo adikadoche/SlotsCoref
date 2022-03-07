@@ -132,12 +132,12 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         )
         coref_scores = torch.ones(top_indices.shape[0], scores.shape[1], device=top_indices.device) * EPSILON
         coref_scores[res.menprop] = scores
-        # coref_scores = coref_scores + scores_mask
-        coref_scores[:,1:] = coref_scores[:,1:] + scores_mask
+        coref_scores = coref_scores + scores_mask
+        # coref_scores[:,1:] = coref_scores[:,1:] + scores_mask
         # coref_scores[:,0][coref_scores[:,0]<EPSILON] = EPSILON
-        # res.coref_scores = utils.add_dummy(coref_scores, eps=True)
+        res.coref_scores = utils.add_dummy(coref_scores, eps=True)
         # a_scores_lst.append(a_scores_batch)
-        res.coref_scores = coref_scores
+        # res.coref_scores = coref_scores
 
 
         # coref_scores  [n_spans, n_ants]
