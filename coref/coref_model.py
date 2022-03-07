@@ -132,12 +132,12 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         )
         coref_scores = torch.ones(top_indices.shape[0], scores.shape[1], device=top_indices.device) * EPSILON
         coref_scores[res.menprop] = scores
-        coref_scores = coref_scores + scores_mask
-        # coref_scores[:,1:] = coref_scores[:,1:] + scores_mask
+        # coref_scores = coref_scores + scores_mask
+        coref_scores[:,1:] = coref_scores[:,1:] + scores_mask
         # coref_scores[:,0][coref_scores[:,0]<EPSILON] = EPSILON
-        res.coref_scores = utils.add_dummy(coref_scores, eps=True)
+        # res.coref_scores = utils.add_dummy(coref_scores, eps=True)
         # a_scores_lst.append(a_scores_batch)
-        # res.coref_scores = coref_scores
+        res.coref_scores = coref_scores
 
 
         # coref_scores  [n_spans, n_ants]
@@ -208,13 +208,22 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
 
         # Obtain bert output for selected batches only
         attention_mask = (subwords_batches != self.tokenizer.pad_token_id)
-        out = self.bert(
-            subwords_batches_tensor,
-            attention_mask=torch.tensor(
-                attention_mask, device=self.device))[0]
 
+        out_array = []
+        embedding = self.bert.get_input_embeddings().weight
+        cls_token = embedding[self.tokenizer.cls_token_id].unsqueeze(0)
+        for i in range(len(subwords_batches_tensor)):
+            inputs = torch.cat([cls_token, embedding[subwords_batches_tensor[i][1:]]], 0).unsqueeze(0)
+            out = self.bert(
+                inputs_embeds=inputs,
+                attention_mask=torch.tensor(
+                    attention_mask[i], device=self.device).unsqueeze(0))[0]
+            out_array.append(out)
+            cls_token = out[:,0]
+
+        out = torch.cat(out_array, 0)
         # [n_subwords, bert_emb]
-        return (out[subword_mask_tensor], out[0,0])
+        return (out[subword_mask_tensor], cls_token)
 
     def _clusterize(self, doc: Doc, scores: torch.Tensor, top_indices: torch.Tensor):
         antecedents = scores.argmax(dim=1) - 1
