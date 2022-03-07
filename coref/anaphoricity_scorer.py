@@ -85,7 +85,7 @@ class AnaphoricityScorer(torch.nn.Module):
 
     def forward(self, *,  # type: ignore  # pylint: disable=arguments-differ  #35566 in pytorch
                 all_mentions: torch.Tensor,
-                cls
+                cls, free_tokens
                 # mentions_batch: torch.Tensor,
                 # pw_batch: torch.Tensor,
                 # top_indices_batch: torch.Tensor,
@@ -106,10 +106,11 @@ class AnaphoricityScorer(torch.nn.Module):
         """
         # [batch_size, n_ants, pair_emb]
         # mentions_with_start_tokens = torch.cat([self.is_choose.weight, self.not_cluster.weight, all_mentions], 0)
-        mentions_with_start_tokens = torch.cat([cls, all_mentions], 0)
+        mentions_with_start_tokens = torch.cat([cls, all_mentions, free_tokens], 0)
         # mentions_with_start_tokens = all_mentions
         src = mentions_with_start_tokens.unsqueeze(0)
         causal_mask = torch.triu(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=1)
+        causal_mask[:,-free_tokens.shape[0]:] = causal_mask[0,0]
         # causal_mask[0,0] = causal_mask[1,0]
         # causal_mask[1,0] = causal_mask[1,1]
         # causal_mask[1,1] = causal_mask[0,0]
@@ -151,7 +152,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])] = 0
 
         # return torch.cat([(cls_scores/len(self.layers)).transpose(0,1), attn_weights], dim=-1) + final_mask[1:,:]
-        return self.dropout(attn_weights)# + final_mask[1:]
+        return self.dropout(attn_weights[:-free_tokens.shape[0],:-free_tokens.shape[0]])# + final_mask[1:]
 
     def _ffnn(self, x: torch.Tensor) -> torch.Tensor:
         """

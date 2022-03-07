@@ -12,7 +12,8 @@ from coref.const import Doc
 
 def get_subwords_batches(doc: Doc,
                          config: Config,
-                         tok: AutoTokenizer
+                         tok: AutoTokenizer,
+                         num_free_tokens:int
                          ) -> np.ndarray:
     """
     Turns a list of subwords to a list of lists of subword indices
@@ -29,7 +30,7 @@ def get_subwords_batches(doc: Doc,
     subwords, speakerdoc_mask, new_word_id = insert_substring(subwords, doc_type, 0, speakerdoc_mask, new_word_id)
     subwords_batches = []
     start, end = 0, 0
-    batch_size = config.bert_window_size - 2 # 2 to save space for CLS and SEP
+    batch_size = config.bert_window_size - num_free_tokens - 2 # 2 to save space for CLS and SEP
 
     while end < len(subwords):
         end = min(end + batch_size, len(subwords))

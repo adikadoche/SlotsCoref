@@ -71,6 +71,7 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         self.epochs_trained = epochs_trained
         self._docs: Dict[str, List[Doc]] = {}
         self.bert, self.tokenizer = bert.load_bert(self.config, self.device)
+        self.tokens_embed = torch.nn.Embedding(10, self.bert.config.hidden_size).to(self.device)
         self.pw = PairwiseEncoder(self.config).to(self.device)
 
         bert_emb = self.bert.config.hidden_size
@@ -86,7 +87,7 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
             "bert": self.bert, "we": self.we,
             "rough_scorer": self.rough_scorer,
             "pw": self.pw, "a_scorer": self.a_scorer,
-            "sp": self.sp
+            "sp": self.sp, "tokens": self.tokens_embed
         }
 
     def forward(self,  # pylint: disable=too-many-locals
@@ -106,7 +107,7 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         # Encode words with bert
         # words           [n_words, span_emb]
         # cluster_ids     [n_words]
-        words, cluster_ids, cls = self.we(doc, self._bertify(doc))
+        words, cluster_ids, cls, free_tokens = self.we(doc, self._bertify(doc))
 
         # Obtain bilinear scores and leave only top-k antecedents for each word
         # top_rough_scores  [n_words, n_ants]
@@ -128,7 +129,7 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
 
             # a_scores_batch    [batch_size, n_ants]
         scores = self.a_scorer(
-            all_mentions=words[res.menprop], cls=cls
+            all_mentions=words[res.menprop], cls=cls, free_tokens=free_tokens
         )
         coref_scores = torch.ones(top_indices.shape[0], scores.shape[1], device=top_indices.device) * EPSILON
         coref_scores[res.menprop] = scores
@@ -192,7 +193,7 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
 
     def _bertify(self, doc: Doc) -> torch.Tensor:
         subwords_batches, speakerdoc_mask = bert.get_subwords_batches(doc, self.config,
-                                                     self.tokenizer)
+                                                     self.tokenizer, self.tokens_embed.weight.shape[0])
 
         special_tokens = np.array([self.tokenizer.cls_token_id,
                                    self.tokenizer.sep_token_id,
@@ -212,18 +213,21 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         out_array = []
         embedding = self.bert.get_input_embeddings().weight
         cls_token = embedding[self.tokenizer.cls_token_id].unsqueeze(0)
+        free_tokens = self.tokens_embed.weight
         for i in range(len(subwords_batches_tensor)):
-            inputs = torch.cat([cls_token, embedding[subwords_batches_tensor[i][1:]]], 0).unsqueeze(0)
+            inputs = torch.cat([cls_token, embedding[subwords_batches_tensor[i][1:]], \
+                free_tokens], 0).unsqueeze(0)
             out = self.bert(
                 inputs_embeds=inputs,
                 attention_mask=torch.tensor(
-                    attention_mask[i], device=self.device).unsqueeze(0))[0]
-            out_array.append(out)
+                    np.concatenate((attention_mask[i], [attention_mask[i][0]] * free_tokens.shape[0])), device=self.device).unsqueeze(0))[0]
+            out_array.append(out[:,:-free_tokens.shape[0],:])
+            free_tokens = out[:,-free_tokens.shape[0]:].squeeze(0)
             cls_token = out[:,0]
 
         out = torch.cat(out_array, 0)
         # [n_subwords, bert_emb]
-        return (out[subword_mask_tensor], cls_token)
+        return (out[subword_mask_tensor], cls_token, free_tokens)
 
     def _clusterize(self, doc: Doc, scores: torch.Tensor, top_indices: torch.Tensor):
         antecedents = scores.argmax(dim=1) - 1

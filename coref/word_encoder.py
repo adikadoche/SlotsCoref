@@ -46,7 +46,7 @@ class WordEncoder(torch.nn.Module):  # pylint: disable=too-many-instance-attribu
             cluster_ids: tensor of shape [n_words], containing cluster indices
                 for each word. Non-coreferent words have cluster id of zero.
         """
-        (x, cls) = x_tuple
+        (x, cls, free_tokens) = x_tuple
         word_boundaries = torch.tensor(doc["word2subword"], device=self.device)
         starts = word_boundaries[:, 0]
         ends = word_boundaries[:, 1]
@@ -56,7 +56,7 @@ class WordEncoder(torch.nn.Module):  # pylint: disable=too-many-instance-attribu
 
         words = self.dropout(words)
 
-        return (words, self._cluster_ids(doc), cls)
+        return (words, self._cluster_ids(doc), cls, free_tokens)
 
     def _attn_scores(self,
                      bert_out: torch.Tensor,
