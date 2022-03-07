@@ -74,7 +74,6 @@ def get_tokenized_speaker(speaker, tok):
     return tok.tokenize(SPEAKER_START + " " + speaker + SPEAKER_END, add_special_tokens=False)
 
 def add_speaker(subwords, doc, tok: AutoTokenizer):
-    longest_speaker_len = 0
     speaker_mask = []
     speakers = doc['speaker']
     new_word_id = copy.deepcopy(doc['word_id'])
@@ -85,8 +84,6 @@ def add_speaker(subwords, doc, tok: AutoTokenizer):
             subword_index -= 1
         if i==0 or speakers[i] != speakers[i-1]:
             speaker_tokens = get_tokenized_speaker(speakers[i], tok)
-            if len(speaker_tokens) > longest_speaker_len:
-                longest_speaker_len = len(speaker_tokens)
             j = 0 if i == 0 else subword_index+1
             subwords[j:j] = speaker_tokens
             new_word_id[j:j] = [i] * len(speaker_tokens)
