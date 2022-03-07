@@ -43,7 +43,7 @@ sbatch \
   --output=${LOG_PATH}  \
   --error=${LOG_PATH}  \
   --partition=${SLURM_PARTITION}  ${NODELIST_FLAG}  ${ACCOUNT_FLAG}  ${EXCLUDE_FLAG}  ${CONSTRAINT_FLAG}  \
-  --time=5760  \
+  --time=1440  \
   --signal=USR1@120  \
   --nodes=1  \
   --ntasks=1  \
