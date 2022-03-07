@@ -257,8 +257,11 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
                     current_node.visited = True
                     cluster.append(clustered_inds[current_node.id].item())
                     stack.extend(link for link in current_node.links if not link.visited)
-                assert len(cluster) > 1
-                clusters.append(sorted(cluster))
+                if len(cluster) > 1:
+                    clusters.append(sorted(cluster))
+                else:
+                    print(cluster)
+                    print(dist_matrix)
         return sorted(clusters)
 
         # true_coref_indices = np.where(coref_bools)[0] #indices of the gold mention that their clusters pass threshold
