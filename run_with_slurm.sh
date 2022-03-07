@@ -38,7 +38,7 @@ sbatch \
   --output=${LOG_PATH}  \
   --error=${LOG_PATH}  \
   --partition=${SLURM_PARTITION}  \
-  --time=2880  \
+  --time=1440  \
   --signal=USR1@120  \
   --nodes=1  \
   --ntasks=1  \
