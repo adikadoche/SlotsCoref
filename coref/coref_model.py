@@ -60,7 +60,7 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         self.args = args
         self.device = args.device
         self.config = config
-        if not os.path.exists(self.config.output_dir):
+        if not args.is_debug and not os.path.exists(self.config.output_dir):
             os.makedirs(self.config.output_dir)
         if not args.is_debug:  
             wb_config = wandb.config
