@@ -78,7 +78,7 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         pair_emb = bert_emb #* 3 + self.pw.shape
 
         # pylint: disable=line-too-long
-        self.a_scorer = AnaphoricityScorer(pair_emb, self.config).to(self.device)
+        self.a_scorer = AnaphoricityScorer(pair_emb, self.config, self.args).to(self.device)
         self.we = WordEncoder(bert_emb, self.config).to(self.device)
         self.rough_scorer = RoughScorer(bert_emb, self.config, self.bert.config).to(self.device)
         self.sp = SpanPredictor(bert_emb, self.config.sp_embedding_size).to(self.device)

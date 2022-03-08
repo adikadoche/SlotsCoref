@@ -59,13 +59,13 @@ class AnaphoricityScorer(torch.nn.Module):
     """ Calculates anaphoricity scores by passing the inputs into a FFNN """
     def __init__(self,
                  in_features: int,
-                 config: Config):
+                 config: Config, args):
         super().__init__()
         # self.not_cluster = torch.nn.Embedding(1, in_features)
         # self.is_choose = torch.nn.Embedding(1, in_features)
         self_attn_layer = SelfAttention(in_features, config.dropout_rate)
-        self.layers = _get_clones(self_attn_layer, 4)
-        self.dropout = torch.nn.Dropout(config.dropout_rate/2)
+        self.layers = _get_clones(self_attn_layer, args.layernum)
+        self.dropout = torch.nn.Dropout(config.dropout_rate/args.dropdiv)
         # self.relu = torch.nn.ReLU(inplace=False)
         # self.layers_weights = torch.nn.Linear(len(self.layers), 1)
         # self.is_choose_classifier = torch.nn.Linear(in_features*2, 1)
