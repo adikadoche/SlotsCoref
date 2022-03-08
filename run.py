@@ -236,9 +236,6 @@ def train(model, train_docs, eval_docs, coref_criterion, span_criterion, optimiz
             logger.info('Train f1, precision, recall: {}, Mentions f1, precision, recall: {}, Mention Proposals f1, precision, recall: {}'.format(\
                 (train_f1, train_p, train_r), (train_f1m, train_pm, train_rm), (train_f1mp, train_pmp, train_rmp)))
 
-        saved_path = save_weights(model, optimizers, schedulers)
-        print(f'saved checkpoint to {saved_path}')
-
         logger.info("***** Running evaluation {} *****".format(str(model.epochs_trained)))
         eval_loss, eval_loss_parts, eval_cluster_evaluator, eval_word_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
             evaluate(model,eval_docs,coref_criterion)

@@ -242,6 +242,8 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         dist_matrix[diag_ind,diag_ind] = float("-inf")
         max_ind = torch.argmax(dist_matrix, -1)
 
+        if max_ind.numel() <= 1:
+            return []
         nodes = [GraphNode(i) for i in range(len(clustered_inds))]
         for i, j in zip(torch.arange(0,len(clustered_inds)).tolist(), max_ind.tolist()):
             nodes[i].link(nodes[j])
