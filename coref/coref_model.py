@@ -235,6 +235,8 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         coref_logits_after_cluster_bool = np.multiply(coref_bools, coref_logits)
         max_coref_score, max_coref_cluster_ind = coref_logits_after_cluster_bool[0].max(0) #[gold_mention] choosing the index of the best cluster per gold mention
         coref_bools = max_coref_score > 0
+        if torch.sum(coref_bools) <= 1:
+            return []
 
         clustered_inds = top_indices[coref_bools]
         dist_matrix = torch.matmul(input_emb[coref_bools], input_emb[coref_bools].transpose(0,1))
@@ -242,8 +244,6 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         dist_matrix[diag_ind,diag_ind] = float("-inf")
         max_ind = torch.argmax(dist_matrix, -1)
 
-        if max_ind.numel() <= 1:
-            return []
         nodes = [GraphNode(i) for i in range(len(clustered_inds))]
         for i, j in zip(torch.arange(0,len(clustered_inds)).tolist(), max_ind.tolist()):
             nodes[i].link(nodes[j])
