@@ -71,7 +71,7 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         self.epochs_trained = epochs_trained
         self._docs: Dict[str, List[Doc]] = {}
         self.bert, self.tokenizer = bert.load_bert(self.config, self.device)
-        self.tokens_embed = torch.nn.Embedding(10, self.bert.config.hidden_size).to(self.device)
+        self.tokens_embed = torch.nn.Embedding(self.args.freetokens, self.bert.config.hidden_size).to(self.device)
         self.pw = PairwiseEncoder(self.config).to(self.device)
 
         bert_emb = self.bert.config.hidden_size
@@ -221,8 +221,11 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
                 inputs_embeds=inputs,
                 attention_mask=torch.tensor(
                     np.concatenate((attention_mask[i], [attention_mask[i][0]] * free_tokens.shape[0])), device=self.device).unsqueeze(0))[0]
-            out_array.append(out[:,:-free_tokens.shape[0],:])
-            free_tokens = out[:,-free_tokens.shape[0]:].squeeze(0)
+            if free_tokens.shape[0] > 0:
+                out_array.append(out[:,:-free_tokens.shape[0],:])
+                free_tokens = out[:,-free_tokens.shape[0]:].squeeze(0)
+            else:
+                out_array.append(out)
             cls_token = out[:,0]
 
         out = torch.cat(out_array, 0)
