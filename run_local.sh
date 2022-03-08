@@ -2,6 +2,7 @@
 
 export JOB_NAME=$1
 export CUDA_VISIBLE_DEVICES=$2
+EXTRA_PARAMS="${@:3:99999}"
 export GIT_HASH="$(git rev-parse HEAD)"
 LOG_DIR="slurm_logs"
 
@@ -19,7 +20,7 @@ echo ""
 echo $LOG_PATH
 
 PYTHONUNBUFFERED=1 nohup /home/gamir/adiz/miniconda3/envs/torchGPU/bin/python -u \
-  run.py train roberta --seed 42 |  tee ${LOG_PATH}  &
+  run.py train roberta --seed 42 ${EXTRA_PARAMS} |  tee ${LOG_PATH}  &
 
 # PYTHONUNBUFFERED=1 nohup /home/gamir/adiz/miniconda3/envs/torchGPU/bin/python -u \
 #   run.py \
