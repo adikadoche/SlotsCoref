@@ -11,7 +11,7 @@
             "program": "${workspaceFolder}/run.py",
             "console": "integratedTerminal",
             "args":[
-                "train", "roberta",
+                "train", "longformer",
                 "--is_debug",
                 // "eval", "roberta",
                 // "--is_debug",
