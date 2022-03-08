@@ -26,7 +26,7 @@ def get_subwords_batches(doc: Doc,
     """
     subwords: List[str] = copy.deepcopy(doc["subwords"])
     subwords, speakerdoc_mask, new_word_id = add_speaker(subwords, doc, tok)
-    doc_type = tok.tokenize(" <doc> " + doc["document_id"][:2] + " </doc>", add_special_tokens=False)
+    doc_type = tok.tokenize(" ### " + doc["document_id"][:2] + " #####", add_special_tokens=False)
     subwords, speakerdoc_mask, new_word_id = insert_substring(subwords, doc_type, 0, speakerdoc_mask, new_word_id)
     subwords_batches = []
     start, end = 0, 0
@@ -70,8 +70,8 @@ def insert_substring(subwords, substring, index, speakerdoc_mask, word_id):
     return subwords, speakerdoc_mask, word_id
 
 def get_tokenized_speaker(speaker, tok):
-    SPEAKER_START = ' <speaker>' 
-    SPEAKER_END = ' </speaker>'  
+    SPEAKER_START = ' #' 
+    SPEAKER_END = ' ##'  
     return tok.tokenize(SPEAKER_START + " " + speaker + SPEAKER_END, add_special_tokens=False)
 
 def add_speaker(subwords, doc, tok: AutoTokenizer):
