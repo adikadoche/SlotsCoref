@@ -69,7 +69,7 @@ dropout_rate = 0.3
 lr_backbone = 1e-5
 
 # Task learning rate
-lr = 4e-4
+lr = 3e-4
 
 # For how many epochs the training is done
 num_train_epochs = 20
