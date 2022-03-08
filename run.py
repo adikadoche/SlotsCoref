@@ -541,7 +541,7 @@ if __name__ == "__main__":
         load_weights(model, path=args.weights, map_location="cpu",
                            ignore={"bert_optimizer", "general_optimizer",
                                    "bert_scheduler", "general_scheduler"})
-        eval_loss, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
+        eval_loss, losses_parts, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
             evaluate(model, eval_docs, coref_criterion, data_split=args.data_split, word_level_conll=args.word_level)
         eval_p, eval_r, eval_f1 = eval_cluster_evaluator.get_prf()
         eval_pm, eval_rm, eval_f1m = eval_men_evaluator.get_prf()
@@ -555,7 +555,7 @@ if __name__ == "__main__":
                 'mentions_recall': eval_rm,  
                 'mention_proposals_avg_f1': eval_f1mp,
                 'mention_proposals_precision': eval_pmp,
-                'mention_proposals_recall': eval_rmp}
+                'mention_proposals_recall': eval_rmp} | losses_parts
         print("***** Eval results *****")
         dict_to_log = {}
         for key, value in eval_results.items():
