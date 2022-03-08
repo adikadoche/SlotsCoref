@@ -110,7 +110,8 @@ class AnaphoricityScorer(torch.nn.Module):
         # mentions_with_start_tokens = all_mentions
         src = mentions_with_start_tokens.unsqueeze(0)
         causal_mask = torch.triu(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=1)
-        causal_mask[:,-free_tokens.shape[0]:] = causal_mask[0,0]
+        if free_tokens.shape[0] > 0:
+            causal_mask[:,-free_tokens.shape[0]:] = causal_mask[0,0]
         # causal_mask[0,0] = causal_mask[1,0]
         # causal_mask[1,0] = causal_mask[1,1]
         # causal_mask[1,1] = causal_mask[0,0]
@@ -152,7 +153,10 @@ class AnaphoricityScorer(torch.nn.Module):
         # attn_weights[torch.arange(0,attn_weights.shape[0]), torch.arange(0,attn_weights.shape[0])] = 0
 
         # return torch.cat([(cls_scores/len(self.layers)).transpose(0,1), attn_weights], dim=-1) + final_mask[1:,:]
-        return self.dropout(attn_weights[1:-free_tokens.shape[0],:-free_tokens.shape[0]])# + final_mask[1:]
+        if free_tokens.shape[0] > 0:
+            return self.dropout(attn_weights[1:-free_tokens.shape[0],:-free_tokens.shape[0]])# + final_mask[1:]
+        else:
+            return self.dropout(attn_weights[1:])# + final_mask[1:]
 
     def _ffnn(self, x: torch.Tensor) -> torch.Tensor:
         """
