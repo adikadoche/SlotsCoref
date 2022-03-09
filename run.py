@@ -524,7 +524,7 @@ if __name__ == "__main__":
                 params.append(param)
 
         optimizers["general_optimizer"] = torch.optim.Adam(
-            params, lr=model.config.lr)
+            params, lr=model.args.lr)
         schedulers["general_scheduler"] = \
             transformers.get_linear_schedule_with_warmup(
                 optimizers["general_optimizer"],

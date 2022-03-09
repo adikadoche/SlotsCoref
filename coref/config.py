@@ -35,7 +35,6 @@ class Config:  # pylint: disable=too-many-instance-attributes, too-few-public-me
 
     bert_finetune: bool
     dropout_rate: float
-    lr: float
     lr_backbone: float
     num_train_epochs: int
     bce_loss_weight: float

@@ -68,9 +68,6 @@ dropout_rate = 0.3
 # Bert learning rate (only used if bert_finetune is set)
 lr_backbone = 1e-5
 
-# Task learning rate
-lr = 3e-4
-
 # For how many epochs the training is done
 num_train_epochs = 20
 

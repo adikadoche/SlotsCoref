@@ -28,6 +28,7 @@ def parse_args():
                            help="If set, output word-level conll-formatted"
                                 " files in evaluation modes. Ignored in"
                                 " 'train' mode.")
+    argparser.add_argument('--lr', type=float, default=3e-4)
 
 
 #     argparser.add_argument('--num_queries', default=150, type=int,
