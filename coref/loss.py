@@ -147,11 +147,11 @@ class MatchingLoss(torch.nn.Module):
                         common_gold_ind[i] = 1
                         ind += 1
 
-        non_dummy_logits = res.coref_logits[:,:-1]
+        non_dummy_logits = res.coref_logits[:,1:]
         new_coref_logits = torch.zeros(gold_matrix.shape[1], non_dummy_logits.shape[0], device=gold_matrix.device)
         new_coref_logits[common_gold_ind == 1] = torch.index_select(non_dummy_logits.transpose(0,1), 0, common_predict_ind)         
         new_coref_logits[-1] = torch.sum(non_dummy_logits[:, junk_mentions_indices], 1)
         new_coref_logits = new_coref_logits.transpose(0,1)
 
-        return gold_matrix, torch.cat([new_coref_logits, res.coref_logits[:,-1].unsqueeze(-1)],-1)
+        return gold_matrix, torch.cat([new_coref_logits, res.coref_logits[:,0].unsqueeze(-1)],-1)
 
