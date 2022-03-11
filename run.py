@@ -26,7 +26,7 @@ from coref import CorefModel
 from cli import parse_args
 from coref.metrics import CorefEvaluator, MentionEvaluator
 from coref.coref_analysis import print_predictions
-from coref.loss import CorefLoss
+from coref.loss import MatchingLoss
 from coref.config import Config
 
 logger = logging.getLogger(__name__)
@@ -143,7 +143,7 @@ def train(model, train_docs, eval_docs, coref_criterion, span_criterion, optimiz
     last_saved_epoch = -1
     global_step = 0
     recent_losses = []
-    recent_losses_parts = {'loss_is_cluster':[], 'loss_is_mention':[], 'loss_coref':[]}
+    recent_losses_parts = {}
     for epoch in range(model.epochs_trained, model.config.num_train_epochs):
         model.train()
         running_c_loss = 0.0
@@ -160,22 +160,24 @@ def train(model, train_docs, eval_docs, coref_criterion, span_criterion, optimiz
 
             res = model(doc, epoch)
 
-            c_loss = coref_criterion(res.coref_scores, res.coref_y)
-            recent_losses_parts['loss_coref'].append(c_loss.item())
-            c_loss += res.cost_is_mention
-            recent_losses_parts['loss_is_mention'].append(res.cost_is_mention.item())
+            c_loss, cost_parts = coref_criterion(res, doc)
             if res.span_y:
                 s_loss = (span_criterion(res.span_scores[:, :, 0], res.span_y[0])
                             + span_criterion(res.span_scores[:, :, 1], res.span_y[1])) / avg_spans / 2
             else:
                 s_loss = torch.zeros_like(c_loss)
-            recent_losses_parts['loss_is_cluster'].append(s_loss.item())
+            cost_parts['loss_span'] = s_loss.detach().cpu()
 
             del res
 
             (c_loss + s_loss).backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             recent_losses.append((c_loss + s_loss).item())
+            for key in cost_parts.keys():
+                if key in recent_losses_parts.keys() and len(recent_losses_parts[key]) > 0:
+                    recent_losses_parts[key].append(cost_parts[key])
+                else:
+                    recent_losses_parts[key] = [cost_parts[key]]
 
             running_c_loss += c_loss.item()
             running_s_loss += s_loss.item()
@@ -209,7 +211,7 @@ def train(model, train_docs, eval_docs, coref_criterion, span_criterion, optimiz
 
         if epoch % 3 == 2:
             print("============ TRAIN EXAMPLES ============")
-            _, _, train_cluster_evaluator, train_word_cluster_evaluator, train_mention_evaluator, train_men_prop_evaluator, _ = \
+            _, _, train_cluster_evaluator, train_word_cluster_evaluator, train_mention_evaluator, train_men_prop_evaluator = \
                 evaluate(model,train_docs,coref_criterion)
             train_p, train_r, train_f1 = train_cluster_evaluator.get_prf()
             train_pw, train_rw, train_f1w = train_word_cluster_evaluator.get_prf()
@@ -234,8 +236,7 @@ def train(model, train_docs, eval_docs, coref_criterion, span_criterion, optimiz
                 (train_f1, train_p, train_r), (train_f1m, train_pm, train_rm), (train_f1mp, train_pmp, train_rmp)))
 
         logger.info("***** Running evaluation {} *****".format(str(model.epochs_trained)))
-        eval_loss, eval_loss_parts, eval_cluster_evaluator, eval_word_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator, \
-            (coref_scores, menprops) = \
+        eval_loss, eval_loss_parts, eval_cluster_evaluator, eval_word_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
             evaluate(model,eval_docs,coref_criterion)
         eval_p, eval_r, eval_f1 = eval_cluster_evaluator.get_prf()
         eval_pm, eval_rm, eval_f1m = eval_men_evaluator.get_prf()
@@ -340,15 +341,13 @@ def evaluate(model,docs,coref_criterion,
     # w_checker = ClusterChecker()
     # s_checker = ClusterChecker()
     running_loss = 0.0
-    losses_parts = {'loss_is_cluster':0.0, 'loss_is_mention':0.0, 'loss_coref':0.0}
+    losses_parts = {}
     s_correct = 0
     s_total = 0
 
     all_gold_clusters = []
     all_predicted_clusters = []
     all_tokens = []
-    coref_scores = []
-    menprops = []
 
     # with conll.open_(self.config, self.epochs_trained, data_split) \
     #         as (gold_f, pred_f):
@@ -357,10 +356,13 @@ def evaluate(model,docs,coref_criterion,
         with torch.no_grad():
             res = model(doc)
 
-            c_loss = coref_criterion(res.coref_scores, res.coref_y).item()
-            running_loss += c_loss + res.cost_is_mention.item()
-            losses_parts['loss_coref'] += c_loss
-            losses_parts['loss_is_mention'] += res.cost_is_mention.item()
+            c_loss, cost_parts = coref_criterion(res, doc)
+            running_loss += c_loss
+            for key in cost_parts.keys():
+                if key in losses_parts.keys():
+                    losses_parts[key] += cost_parts[key]
+                else:
+                    losses_parts[key] = cost_parts[key]
 
         if res.span_y:
             pred_starts = res.span_scores[:, :, 0].argmax(dim=1)
@@ -400,8 +402,6 @@ def evaluate(model,docs,coref_criterion,
         all_predicted_clusters.append(res.span_clusters)
         all_gold_clusters.append(doc["span_clusters"])
         all_tokens.append(doc["cased_words"])
-        coref_scores.append(res.coref_scores.detach().cpu())
-        menprops.append(res.menprop.detach().cpu())
 
         del res
 
@@ -413,11 +413,10 @@ def evaluate(model,docs,coref_criterion,
     # logger.info('Cluster f1, precision, recall: {}'.format(\
     #     (train_f1, train_p, train_r)))
 
-    losses_parts['loss_is_cluster'] = s_correct / s_total
-    losses_parts['loss_is_mention'] /= len(docs)
-    losses_parts['loss_coref'] /= len(docs)
-    return running_loss / len(docs), losses_parts, cluster_evaluator, word_cluster_evaluator, mention_evaluator, men_prop_evaluator, \
-        (coref_scores, menprops)
+    for key in cost_parts.keys():
+        losses_parts[key] /= len(docs)
+
+    return running_loss / len(docs), losses_parts, cluster_evaluator, word_cluster_evaluator, mention_evaluator, men_prop_evaluator
 
 
 
@@ -487,7 +486,7 @@ if __name__ == "__main__":
     config.output_dir = os.path.join(config.output_dir, \
         datetime.datetime.now().strftime(f"%m_%d_%Y_%H_%M_%S")+'_'+args.run_name)
     model = CorefModel(args, config)
-    coref_criterion = CorefLoss(config.bce_loss_weight)
+    coref_criterion = MatchingLoss(args.freetokens)
     span_criterion = torch.nn.CrossEntropyLoss(reduction="sum")
     
     train_docs = list(_get_docs(config.train_file, model))
@@ -540,7 +539,7 @@ if __name__ == "__main__":
         load_weights(model, path=args.weights, map_location="cpu",
                            ignore={"bert_optimizer", "general_optimizer",
                                    "bert_scheduler", "general_scheduler"})
-        eval_loss, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
+        eval_loss, losses_parts, eval_cluster_evaluator, eval_men_evaluator, eval_men_prop_evaluator = \
             evaluate(model, eval_docs, coref_criterion, data_split=args.data_split, word_level_conll=args.word_level)
         eval_p, eval_r, eval_f1 = eval_cluster_evaluator.get_prf()
         eval_pm, eval_rm, eval_f1m = eval_men_evaluator.get_prf()
@@ -554,7 +553,7 @@ if __name__ == "__main__":
                 'mentions_recall': eval_rm,  
                 'mention_proposals_avg_f1': eval_f1mp,
                 'mention_proposals_precision': eval_pmp,
-                'mention_proposals_recall': eval_rmp}
+                'mention_proposals_recall': eval_rmp} | losses_parts
         print("***** Eval results *****")
         dict_to_log = {}
         for key, value in eval_results.items():

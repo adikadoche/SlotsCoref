@@ -154,7 +154,7 @@ class AnaphoricityScorer(torch.nn.Module):
 
         # return torch.cat([(cls_scores/len(self.layers)).transpose(0,1), attn_weights], dim=-1) + final_mask[1:,:]
         if free_tokens.shape[0] > 0:
-            return self.dropout(attn_weights[1:-free_tokens.shape[0],:-free_tokens.shape[0]])# + final_mask[1:]
+            return self.dropout(attn_weights[-free_tokens.shape[0]:,:-free_tokens.shape[0]].softmax(0))# + final_mask[1:]
         else:
             return self.dropout(attn_weights[1:])# + final_mask[1:]
 

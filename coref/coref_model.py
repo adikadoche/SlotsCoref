@@ -4,6 +4,7 @@ import os
 from typing import Any, Dict, List, Optional, Set, Tuple
 import logging
 import wandb
+import itertools
 
 import numpy as np      # type: ignore
 import jsonlines        # type: ignore
@@ -112,7 +113,7 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         # Obtain bilinear scores and leave only top-k antecedents for each word
         # top_rough_scores  [n_words, n_ants]
         # top_indices       [n_words, n_ants]
-        scores_mask, top_indices, res.menprop, res.cost_is_mention = self.rough_scorer(words, doc['word_clusters'])
+        scores_mask, res.coref_indices, res.menprop, res.cost_is_mention = self.rough_scorer(words, doc['word_clusters'])
         # top_rough_scores, top_indices = self.rough_scorer(words, doc['word_clusters'])
 
         # Get pairwise features [n_words, n_ants, n_pw_features]
@@ -128,17 +129,17 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         #     top_rough_scores_batch = top_rough_scores[i:i + batch_size]
 
             # a_scores_batch    [batch_size, n_ants]
-        scores = self.a_scorer(
+        res.coref_logits = self.a_scorer(
             all_mentions=words[res.menprop], cls=cls, free_tokens=free_tokens
         )
-        coref_scores = torch.ones(top_indices.shape[0], scores.shape[1], device=top_indices.device) * EPSILON
-        coref_scores[res.menprop] = scores
-        # coref_scores = coref_scores + scores_mask
-        coref_scores[:,1:] = coref_scores[:,1:] + scores_mask
-        # coref_scores[:,0][coref_scores[:,0]<EPSILON] = EPSILON
-        # res.coref_scores = utils.add_dummy(coref_scores, eps=True)
-        # a_scores_lst.append(a_scores_batch)
-        res.coref_scores = coref_scores
+        # coref_scores = torch.ones(top_indices.shape[0], scores.shape[1], device=top_indices.device) * EPSILON
+        # coref_scores[res.menprop] = scores
+        # # coref_scores = coref_scores + scores_mask
+        # coref_scores[:,1:] = coref_scores[:,1:] + scores_mask
+        # # coref_scores[:,0][coref_scores[:,0]<EPSILON] = EPSILON
+        # # res.coref_scores = utils.add_dummy(coref_scores, eps=True)
+        # # a_scores_lst.append(a_scores_batch)
+        # res.coref_scores = coref_scores
 
 
         # coref_scores  [n_spans, n_ants]
@@ -169,10 +170,10 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         # res.coref_y = self._get_ground_truth(
         #     cluster_ids, top_indices, (top_rough_scores > float("-inf")))
         res.coref_y = self._get_ground_truth(
-            cluster_ids, top_indices, (scores_mask > float("-inf")))
+            cluster_ids, res.coref_indices, (scores_mask > float("-inf")))
         if epoch % 3 == 2 or not self.training:
-            res.word_clusters = self._clusterize(doc, res.coref_scores,
-                                                top_indices)
+            res.word_clusters = self._clusterize_slots(res.coref_logits.detach().cpu(),
+                                                res.coref_indices[0])
             # onehotpredict = torch.zeros(len(words), len(words)+1)
             # gold_mentions = [m for c in doc['word_clusters'] for m in c]
             # ordered_rows = torch.tensor(gold_mentions + [x for x in range(onehotpredict.shape[0]) if x not in gold_mentions])
@@ -231,6 +232,25 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         out = torch.cat(out_array, 0)
         # [n_subwords, bert_emb]
         return (out[subword_mask_tensor], cls_token, free_tokens)
+
+    def _clusterize_slots(self, coref_logits, top_indices, threshold=0.05):
+        max_values, max_inds = torch.max(coref_logits[:,1:], dim=0)
+        clustered_mentions_bool = max_values > threshold
+        true_coref_indices = top_indices[np.where(clustered_mentions_bool.numpy())[0]] #indices of the gold mention that their clusters pass threshold
+        max_coref_cluster_ind_filtered = max_inds[clustered_mentions_bool] #index of the best clusters per gold mention, if it passes the threshold
+
+        cluster_id_to_tokens = {k: list(v) for k, v in itertools.groupby(sorted(list(zip(true_coref_indices, max_coref_cluster_ind_filtered.numpy())), key=lambda x: x[-1]), lambda x: x[-1])}
+
+        clusters = []
+
+        for gold_mentions_inds in cluster_id_to_tokens.values():
+            current_cluster = []
+            for mention_id in gold_mentions_inds:
+                current_cluster.append(mention_id[0].item())
+            if len(current_cluster) > 1:
+                clusters.append(current_cluster)
+
+        return sorted(clusters)
 
     def _clusterize(self, doc: Doc, scores: torch.Tensor, top_indices: torch.Tensor):
         antecedents = scores.argmax(dim=1) - 1

@@ -20,7 +20,7 @@ class HungarianMatcher(nn.Module):
     while the others are un-matched (and thus treated as non-objects).
     """
 
-    def __init__(self, cost_is_cluster: float = 1, cost_coref: float = 1, num_queries=100):
+    def __init__(self, cost_coref: float = 1, num_queries=100):
         """Creates the matcher
 
         Params:
@@ -29,7 +29,6 @@ class HungarianMatcher(nn.Module):
             cost_giou: This is the relative weight of the giou loss of the bounding box in the matching cost
         """
         super().__init__()
-        self.cost_is_cluster = cost_is_cluster
         self.cost_coref = cost_coref
         self.num_queries = num_queries
 
@@ -57,27 +56,20 @@ class HungarianMatcher(nn.Module):
         if gold_matrix.shape[1] == 0 or torch.sum(gold_matrix) == 0:
             return False, False
 
-        coref_logits = coref_logits[:self.num_queries] # [num_queries, tokens]
-        cluster_logits = res.cluster_logits[:self.num_queries] # [num_queries, 1]
+        coref_logits = coref_logits[:self.num_queries, :-1] # [num_queries, tokens_without_dummy]
 
         real_cluster_target_rows = torch.sum(gold_matrix, -1) > 0
         real_cluster_target = gold_matrix[real_cluster_target_rows]
-        num_of_gold_clusters = int(real_cluster_target.shape[0])
-
-        cost_is_cluster = F.binary_cross_entropy(cluster_logits, torch.ones_like(cluster_logits), reduction='none') # [num_queries, 1]
-        cost_is_cluster = cost_is_cluster.repeat(1, num_of_gold_clusters) # [num_queries, gold_clusters]
 
         cluster_repeated = real_cluster_target[:,:-1].unsqueeze(1).repeat(1, coref_logits.shape[0], 1)
         coref_logits_repeated = coref_logits.unsqueeze(0).repeat(real_cluster_target.shape[0], 1, 1)
-        cluster_logits_repeated = cluster_logits.unsqueeze(0).repeat(real_cluster_target.shape[0], 1, 1)
-        clamped_logits1 = (coref_logits_repeated[:,:,:-1] * \
-            cluster_logits_repeated).clamp(max=1.0)
+        clamped_logits1 = coref_logits_repeated[:,:,:-1].clamp(max=1.0)
         cost_coref = torch.mean(F.binary_cross_entropy(clamped_logits1, \
             cluster_repeated, reduction='none'), -1) + \
-                cluster_logits_repeated.squeeze(-1) * coref_logits_repeated[:,:, -1]
+                coref_logits_repeated[:,:, -1]
         cost_coref = cost_coref.transpose(0,1)
 
-        total_cost = self.cost_is_cluster * cost_is_cluster + self.cost_coref * cost_coref
+        total_cost = self.cost_coref * cost_coref
         # total_cost = self.cost_coref * cost_coref
         total_cost = total_cost.cpu()
         indices = linear_sum_assignment(total_cost)
