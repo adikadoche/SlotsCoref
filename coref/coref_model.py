@@ -215,6 +215,11 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         embedding = self.bert.get_input_embeddings().weight
         cls_token = embedding[self.tokenizer.cls_token_id].unsqueeze(0)
         free_tokens = self.tokens_embed.weight
+        
+        if self.args.is_perm:
+            perm = torch.randperm(free_tokens.shape[0])
+            free_tokens = free_tokens[perm]
+
         for i in range(len(subwords_batches_tensor)):
             inputs = torch.cat([cls_token, embedding[subwords_batches_tensor[i][1:]], \
                 free_tokens], 0).unsqueeze(0)
