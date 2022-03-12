@@ -111,14 +111,14 @@ class AnaphoricityScorer(torch.nn.Module):
         src = mentions_with_start_tokens.unsqueeze(0)
         causal_mask = torch.triu(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=1)
         if free_tokens.shape[0] > 0:
-            causal_mask[:,-free_tokens.shape[0]:] = causal_mask[0,0]
+            causal_mask[-free_tokens.shape[0]:,-free_tokens.shape[0]:] = causal_mask[0,0]
         # causal_mask[0,0] = causal_mask[1,0]
         # causal_mask[1,0] = causal_mask[1,1]
         # causal_mask[1,1] = causal_mask[0,0]
         attn_weights = [[]] * len(self.layers)
         # cls_scores = torch.zeros(1, device=src.device)
         # layers_weights = self.layers_weights.weight.softmax(1).transpose(0,1)
-        final_mask = torch.triu(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=0)
+        # final_mask = torch.triu(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=0)
         for i,layer in enumerate(self.layers):
             src, attn_weights[i] = layer(src,attn_mask=causal_mask)
             # attn_weights[i] = attn_weights[i] + final_mask
