@@ -95,12 +95,12 @@ class MatchingLoss(torch.nn.Module):
         cost_junk = torch.tensor(0., device=coref_logits.device)
         if matched_predicted_cluster_id is not False:  #TODO: add zero rows?
             permuted_coref_logits = coref_logits[matched_predicted_cluster_id.numpy(), :-1]
-            permuted_coref_logits[:, -1] = permuted_coref_logits[:, -1] + coref_logits[matched_predicted_cluster_id.numpy(), -1]
+            # permuted_coref_logits[:, -1] = permuted_coref_logits[:, -1] + coref_logits[matched_predicted_cluster_id.numpy(), -1]
             junk_coref_logits = coref_logits[[x for x in range(coref_logits.shape[0]) if x not in matched_predicted_cluster_id.numpy()]]
             permuted_gold = gold_matrix[matched_gold_cluster_id.numpy()]
             permuted_gold = permuted_gold[:, :-1]
-            junk_gold = torch.cat([torch.zeros_like(junk_coref_logits[:, :-1]),torch.ones_like(junk_coref_logits[:, -1]).unsqueeze(1)],1)
-            clamped_logits = (permuted_coref_logits[:, :-1]).clamp(max=1.0)
+            junk_gold = torch.zeros_like(junk_coref_logits)
+            clamped_logits = permuted_coref_logits.clamp(max=1.0)
             cost_coref = F.binary_cross_entropy(clamped_logits, permuted_gold, reduction='mean') + \
                           torch.mean(permuted_coref_logits[:, -1])
             # cost_coref = torch.mean(torch.logsumexp(clamped_logits, dim=1) - torch.logsumexp(clamped_logits + torch.log(permuted_gold), dim=1)) + \
@@ -147,11 +147,11 @@ class MatchingLoss(torch.nn.Module):
                         common_gold_ind[i] = 1
                         ind += 1
 
-        non_dummy_logits = res.coref_logits[:,1:]
+        non_dummy_logits = res.coref_logits#[:,1:]
         new_coref_logits = torch.zeros(gold_matrix.shape[1], non_dummy_logits.shape[0], device=gold_matrix.device)
         new_coref_logits[common_gold_ind == 1] = torch.index_select(non_dummy_logits.transpose(0,1), 0, common_predict_ind)         
-        new_coref_logits[-1] = torch.sum(non_dummy_logits[:, junk_mentions_indices], 1)
+        new_coref_logits[-1] = torch.mean(non_dummy_logits[:, junk_mentions_indices], 1)
         new_coref_logits = new_coref_logits.transpose(0,1)
 
-        return gold_matrix, torch.cat([new_coref_logits, res.coref_logits[:,0].unsqueeze(-1)],-1)
+        return gold_matrix, new_coref_logits
 

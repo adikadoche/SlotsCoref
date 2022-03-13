@@ -63,7 +63,8 @@ class AnaphoricityScorer(torch.nn.Module):
         super().__init__()
         # self.not_cluster = torch.nn.Embedding(1, in_features)
         # self.is_choose = torch.nn.Embedding(1, in_features)
-        self_attn_layer = SelfAttention(in_features, config.dropout_rate)
+        # self_attn_layer = SelfAttention(in_features, config.dropout_rate)
+        self_attn_layer = torch.nn.MultiheadAttention(in_features, 1, batch_first=True)
         self.layers = _get_clones(self_attn_layer, args.layernum)
         self.dropout = torch.nn.Dropout(config.dropout_rate/args.dropdiv)
         # self.relu = torch.nn.ReLU(inplace=False)
@@ -81,6 +82,9 @@ class AnaphoricityScorer(torch.nn.Module):
         #                    torch.nn.Dropout(config.dropout_rate)])
         # self.hidden = torch.nn.Sequential(*layers)
         # self.out = torch.nn.Linear(hidden_size, out_features=1)
+        self.ffnn_layer = torch.nn.Sequential(torch.nn.Linear(in_features*3, 1),
+                           torch.nn.LeakyReLU(),
+                           torch.nn.Dropout(config.dropout_rate))
 
 
     def forward(self, *,  # type: ignore  # pylint: disable=arguments-differ  #35566 in pytorch
@@ -120,7 +124,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # layers_weights = self.layers_weights.weight.softmax(1).transpose(0,1)
         # final_mask = torch.triu(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=0)
         for i,layer in enumerate(self.layers):
-            src, attn_weights[i] = layer(src,attn_mask=causal_mask)
+            src = layer(src,src,src,attn_mask=causal_mask)[0]
             # attn_weights[i] = attn_weights[i] + final_mask
             # attn_weights[i] = attn_weights[i][:,1:].softmax(dim=-1)
             # is_choose = self.is_choose_classifier(torch.cat([src, out],-1)).sigmoid()
@@ -136,11 +140,11 @@ class AnaphoricityScorer(torch.nn.Module):
         # for i in range(len(self.self_attn)):
         #     src, attn_weights = self.self_attn[i](src, src, src, need_weights=True, \
         #         attn_mask=causal_mask)
-        attn_weights = torch.cat(attn_weights, 0)
-        # is_choose = attn_weights[:,2:,0].sigmoid()
-        # choose_attn_weights = is_choose.unsqueeze(-1) * attn_weights[:,2:,1:]
-        attn_weights = torch.sum(attn_weights, dim=0)
-        attn_weights[:,0] = attn_weights[:,0]/len(self.layers)
+        # attn_weights = torch.cat(attn_weights, 0)
+        # # is_choose = attn_weights[:,2:,0].sigmoid()
+        # # choose_attn_weights = is_choose.unsqueeze(-1) * attn_weights[:,2:,1:]
+        # attn_weights = torch.sum(attn_weights, dim=0)
+        # attn_weights[:,0] = attn_weights[:,0]/len(self.layers)
         # attn_weights[:,0] = attn_weights[:,0] / len(self.layers)
         # attn_weights = attn_weights.squeeze(0)
                             #   key_padding_mask=src_key_padding_mask)[0]
@@ -154,7 +158,8 @@ class AnaphoricityScorer(torch.nn.Module):
 
         # return torch.cat([(cls_scores/len(self.layers)).transpose(0,1), attn_weights], dim=-1) + final_mask[1:,:]
         if free_tokens.shape[0] > 0:
-            return self.dropout(attn_weights[-free_tokens.shape[0]:,:-free_tokens.shape[0]].softmax(0))# + final_mask[1:]
+            return self.ffnn_layer(self._get_pair_matrix(src, free_tokens.shape[0])).sigmoid().squeeze(-1)
+            # return self.dropout(attn_weights[-free_tokens.shape[0]:,:-free_tokens.shape[0]].softmax(0))# + final_mask[1:]
         else:
             return self.dropout(attn_weights[1:])# + final_mask[1:]
 
@@ -171,12 +176,7 @@ class AnaphoricityScorer(torch.nn.Module):
         x = self.out(self.hidden(x))
         return x.squeeze(2)
 
-    @staticmethod
-    def _get_pair_matrix(all_mentions: torch.Tensor,
-                         mentions_batch: torch.Tensor,
-                         pw_batch: torch.Tensor,
-                         top_indices_batch: torch.Tensor,
-                         ) -> torch.Tensor:
+    def _get_pair_matrix(self, src, num_free_tokens) -> torch.Tensor:
         """
         Builds the matrix used as input for AnaphoricityScorer.
 
@@ -196,12 +196,11 @@ class AnaphoricityScorer(torch.nn.Module):
         Returns:
             torch.Tensor: [batch_size, n_ants, pair_emb]
         """
-        emb_size = mentions_batch.shape[1]
-        n_ants = pw_batch.shape[1]
-
-        a_mentions = mentions_batch.unsqueeze(1).expand(-1, n_ants, emb_size)
-        b_mentions = all_mentions[top_indices_batch]
+        words = src.squeeze(0)[1:-num_free_tokens]
+        free_tokens = src.squeeze(0)[-num_free_tokens:]
+        a_mentions = words.unsqueeze(0).repeat(num_free_tokens, 1, 1)
+        b_mentions = free_tokens.unsqueeze(1).repeat(1,words.shape[0],1)
         similarity = a_mentions * b_mentions
 
-        out = torch.cat((a_mentions, b_mentions, similarity, pw_batch), dim=2)
+        out = torch.cat((a_mentions, b_mentions, similarity), dim=2)
         return out

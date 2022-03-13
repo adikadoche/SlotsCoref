@@ -56,8 +56,8 @@ class HungarianMatcher(nn.Module):
         if gold_matrix.shape[1] == 0 or torch.sum(gold_matrix) == 0:
             return False, False
 
-        new_coref_logits = coref_logits[:self.num_queries, :-1] # [num_queries, tokens_without_dummy]
-        new_coref_logits[:, -1] = new_coref_logits[:, -1] + coref_logits[:self.num_queries, -1]
+        new_coref_logits = coref_logits[:self.num_queries] # [num_queries, tokens_without_dummy]
+        # new_coref_logits[:, -1] = new_coref_logits[:, -1] + coref_logits[:self.num_queries, -1]
 
         real_cluster_target_rows = torch.sum(gold_matrix, -1) > 0
         real_cluster_target = gold_matrix[real_cluster_target_rows]
