@@ -216,7 +216,7 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         cls_token = embedding[self.tokenizer.cls_token_id].unsqueeze(0)
         free_tokens = self.tokens_embed.weight
         
-        if self.args.is_perm:
+        if not self.args.not_perm:
             perm = torch.randperm(free_tokens.shape[0])
             free_tokens = free_tokens[perm]
 
