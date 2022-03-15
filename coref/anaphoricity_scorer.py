@@ -7,7 +7,7 @@ import copy
 
 from coref import utils
 from coref.config import Config
-from coref.multi_head_attention import MultiheadAttention
+# from coref.multi_head_attention import MultiheadAttention
 
 def _get_clones(module, N):
     return torch.nn.ModuleList([copy.deepcopy(module) for i in range(N)])

@@ -16,7 +16,7 @@ import os
 import wandb 
 from tqdm import tqdm   # type: ignore
 import transformers     # type: ignore
-import networkx as nx
+# import networkx as nx
 import toml
 
 import numpy as np  # type: ignore

@@ -217,10 +217,21 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         for i in range(len(subwords_batches_tensor)):
             inputs = torch.cat([cls_token, embedding[subwords_batches_tensor[i][1:]], \
                 free_tokens], 0).unsqueeze(0)
-            out = self.bert(
-                inputs_embeds=inputs,
-                attention_mask=torch.tensor(
-                    np.concatenate((attention_mask[i], [attention_mask[i][0]] * free_tokens.shape[0])), device=self.device).unsqueeze(0))[0]
+            if self.args.model_type == 'longformer':
+                global_attention_mask = torch.zeros_like(inputs[:,:,0])
+                global_attention_mask[0,0] = 1
+                if free_tokens.shape[0] > 0:
+                    global_attention_mask[0,-free_tokens.shape[0]:] = 1
+                out = self.bert(
+                    inputs_embeds=inputs,
+                    attention_mask=torch.tensor(
+                        np.concatenate((attention_mask[i], [attention_mask[i][0]] * free_tokens.shape[0])), device=self.device).unsqueeze(0),
+                        global_attention_mask=global_attention_mask)[0]
+            else:
+                out = self.bert(
+                    inputs_embeds=inputs,
+                    attention_mask=torch.tensor(
+                        np.concatenate((attention_mask[i], [attention_mask[i][0]] * free_tokens.shape[0])), device=self.device).unsqueeze(0))[0]
             if free_tokens.shape[0] > 0:
                 out_array.append(out[:,:-free_tokens.shape[0],:])
                 free_tokens = out[:,-free_tokens.shape[0]:].squeeze(0)
