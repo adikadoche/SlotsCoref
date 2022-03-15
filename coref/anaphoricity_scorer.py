@@ -113,9 +113,11 @@ class AnaphoricityScorer(torch.nn.Module):
         mentions_with_start_tokens = torch.cat([cls, all_mentions, free_tokens], 0)
         # mentions_with_start_tokens = all_mentions
         src = mentions_with_start_tokens.unsqueeze(0)
-        causal_mask = torch.triu(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=1)
+        causal_mask = torch.triu(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=1) + \
+            torch.tril(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=-1)
         if free_tokens.shape[0] > 0:
-            causal_mask[-free_tokens.shape[0]:,-free_tokens.shape[0]:] = causal_mask[0,0]
+            causal_mask[-free_tokens.shape[0]:,:-free_tokens.shape[0]] = 0
+            causal_mask[-free_tokens.shape[0]:,-free_tokens.shape[0]:] = 0
         # causal_mask[0,0] = causal_mask[1,0]
         # causal_mask[1,0] = causal_mask[1,1]
         # causal_mask[1,1] = causal_mask[0,0]
