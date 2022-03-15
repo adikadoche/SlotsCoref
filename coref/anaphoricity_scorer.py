@@ -64,9 +64,13 @@ class AnaphoricityScorer(torch.nn.Module):
         # self.not_cluster = torch.nn.Embedding(1, in_features)
         # self.is_choose = torch.nn.Embedding(1, in_features)
         # self_attn_layer = SelfAttention(in_features, config.dropout_rate)
+        if args.dropdiv > 0:
+            dropout_rate = config.dropout_rate/args.dropdiv
+        else:
+            dropout_rate = 0
         self_attn_layer = torch.nn.MultiheadAttention(in_features, 1, batch_first=True)
         self.layers = _get_clones(self_attn_layer, args.layernum)
-        self.dropout = torch.nn.Dropout(config.dropout_rate/args.dropdiv)
+        self.dropout = torch.nn.Dropout(dropout_rate)
         # self.relu = torch.nn.ReLU(inplace=False)
         # self.layers_weights = torch.nn.Linear(len(self.layers), 1)
         # self.is_choose_classifier = torch.nn.Linear(in_features*2, 1)
@@ -84,7 +88,7 @@ class AnaphoricityScorer(torch.nn.Module):
         # self.out = torch.nn.Linear(hidden_size, out_features=1)
         self.ffnn_layer = torch.nn.Sequential(torch.nn.Linear(in_features*3, 1),
                            torch.nn.LeakyReLU(),
-                           torch.nn.Dropout(config.dropout_rate))
+                           torch.nn.Dropout(dropout_rate))
 
 
     def forward(self, *,  # type: ignore  # pylint: disable=arguments-differ  #35566 in pytorch
@@ -113,11 +117,13 @@ class AnaphoricityScorer(torch.nn.Module):
         mentions_with_start_tokens = torch.cat([cls, all_mentions, free_tokens], 0)
         # mentions_with_start_tokens = all_mentions
         src = mentions_with_start_tokens.unsqueeze(0)
-        causal_mask = torch.triu(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=1) + \
-            torch.tril(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=-1)
+        causal_mask = torch.triu(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=1)
+        # causal_mask = torch.triu(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=1) + \
+        #     torch.tril(float("-inf")*torch.ones(mentions_with_start_tokens.shape[0], mentions_with_start_tokens.shape[0], device=all_mentions.device), diagonal=-1)
         if free_tokens.shape[0] > 0:
-            causal_mask[-free_tokens.shape[0]:,:-free_tokens.shape[0]] = 0
-            causal_mask[-free_tokens.shape[0]:,-free_tokens.shape[0]:] = 0
+            causal_mask[:,-free_tokens.shape[0]:] = causal_mask[0,0]
+            # causal_mask[-free_tokens.shape[0]:,:-free_tokens.shape[0]] = 0
+            # causal_mask[-free_tokens.shape[0]:,-free_tokens.shape[0]:] = 0
         # causal_mask[0,0] = causal_mask[1,0]
         # causal_mask[1,0] = causal_mask[1,1]
         # causal_mask[1,1] = causal_mask[0,0]
@@ -160,7 +166,7 @@ class AnaphoricityScorer(torch.nn.Module):
 
         # return torch.cat([(cls_scores/len(self.layers)).transpose(0,1), attn_weights], dim=-1) + final_mask[1:,:]
         if free_tokens.shape[0] > 0:
-            return self.ffnn_layer(self._get_pair_matrix(src, free_tokens.shape[0])).sigmoid().squeeze(-1)
+            return self.ffnn_layer(self._get_pair_matrix(src, free_tokens.shape[0])).squeeze(-1).softmax(dim=0)[1:]
             # return self.dropout(attn_weights[-free_tokens.shape[0]:,:-free_tokens.shape[0]].softmax(0))# + final_mask[1:]
         else:
             return self.dropout(attn_weights[1:])# + final_mask[1:]
@@ -199,8 +205,8 @@ class AnaphoricityScorer(torch.nn.Module):
             torch.Tensor: [batch_size, n_ants, pair_emb]
         """
         words = src.squeeze(0)[1:-num_free_tokens]
-        free_tokens = src.squeeze(0)[-num_free_tokens:]
-        a_mentions = words.unsqueeze(0).repeat(num_free_tokens, 1, 1)
+        free_tokens = torch.cat([src[:,0], src.squeeze(0)[-num_free_tokens:]], 0)
+        a_mentions = words.unsqueeze(0).repeat(free_tokens.shape[0], 1, 1)
         b_mentions = free_tokens.unsqueeze(1).repeat(1,words.shape[0],1)
         similarity = a_mentions * b_mentions
 
