@@ -30,7 +30,7 @@
             "program": "${workspaceFolder}/t5.py",
             "console": "integratedTerminal",
             "args":[
-                "val", "same",
+                "train", //"--mode","same",
                 // "train", "roberta",
                 // "--is_debug",
                 // "--train_size","1000001",
