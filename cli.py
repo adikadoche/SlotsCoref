@@ -40,6 +40,7 @@ def parse_args():
     argparser.add_argument('--dropdiv', type=int, default=2)
     argparser.add_argument('--layernum', type=int, default=1)
     argparser.add_argument('--freetokens', type=int, default=100)
+    argparser.add_argument("--not_perm", action="store_true", help="Whether to run profiling.")
     argparser.add_argument('--max_eval_print', type=int, default=5)
     argparser.add_argument("--is_debug", action="store_true", help="Whether to run profiling.")
     argparser.add_argument("--no_cuda", action="store_true", help="Whether not to use CUDA when available")

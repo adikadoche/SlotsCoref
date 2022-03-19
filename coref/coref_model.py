@@ -215,16 +215,31 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         embedding = self.bert.get_input_embeddings().weight
         cls_token = embedding[self.tokenizer.cls_token_id].unsqueeze(0)
         free_tokens = self.tokens_embed.weight
+        if not self.args.not_perm:
+            perm = torch.randperm(free_tokens.shape[0])
+            free_tokens = free_tokens[perm]
         for i in range(len(subwords_batches_tensor)):
-            inputs = torch.cat([cls_token, embedding[subwords_batches_tensor[i][1:]], \
-                free_tokens], 0).unsqueeze(0)
-            out = self.bert(
-                inputs_embeds=inputs,
-                attention_mask=torch.tensor(
-                    np.concatenate((attention_mask[i], [attention_mask[i][0]] * free_tokens.shape[0])), device=self.device).unsqueeze(0))[0]
+            first_pad_ind = torch.sum(subwords_batches_tensor[i] != self.tokenizer.pad_token_id)
+            inputs = torch.cat([cls_token, embedding[subwords_batches_tensor[i][1:first_pad_ind]], \
+                free_tokens, embedding[subwords_batches_tensor[i][first_pad_ind:]]], 0).unsqueeze(0)
+            att_mask = torch.tensor(np.concatenate((attention_mask[i][:first_pad_ind], [attention_mask[i][0]] * free_tokens.shape[0], \
+                attention_mask[i][first_pad_ind:])), device=self.device).unsqueeze(0)
+            if self.args.model_type == 'longformer':
+                global_attention_mask = torch.zeros_like(inputs[:,:,0])
+                global_attention_mask[0,0] = 1
+                if free_tokens.shape[0] > 0:
+                    global_attention_mask[0,first_pad_ind:first_pad_ind+free_tokens.shape[0]:] = 1
+                out = self.bert(
+                    inputs_embeds=inputs,
+                    attention_mask=att_mask,
+                        global_attention_mask=global_attention_mask)[0]
+            else:
+                out = self.bert(
+                    inputs_embeds=inputs,
+                    attention_mask=att_mask)[0]
             if free_tokens.shape[0] > 0:
-                out_array.append(out[:,:-free_tokens.shape[0],:])
-                free_tokens = out[:,-free_tokens.shape[0]:].squeeze(0)
+                out_array.append(torch.cat([out[:,:first_pad_ind,:], out[:,first_pad_ind+free_tokens.shape[0]:,:]], 1))
+                free_tokens = out[:,first_pad_ind:first_pad_ind+free_tokens.shape[0]].squeeze(0)
             else:
                 out_array.append(out)
             cls_token = out[:,0]
