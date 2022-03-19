@@ -11,14 +11,39 @@
             "program": "${workspaceFolder}/run.py",
             "console": "integratedTerminal",
             "args":[
-                "train", "longformer",
+                "train", "roberta",
                 "--is_debug",
+                "--layernum","1",
+                "--freetokens","100",
+                "--dropdiv","-1",
                 // "eval", "roberta",
                 // "--is_debug",
                 // "--data_split", "dev",
                 // "--weights", "/home/gamir/adiz/datasets/wl-ontonotes/2022.02.22_14.58/2022.02.22_17.39/roberta_e20_2022.02.22_19.57.pt" //roberta_e20_2022.02.22_19.57  //roberta_e18_2022.02.22_19.43
-                // "--weights", "/home/gamir/adiz/Code/runs/wl-coref/weights/03_04_2022_11_05_45_sidebuside/roberta_e0.pt"
+                // "--weights", "/home/gamir/adiz/Code/runs/wl-coref/weights/03_13_2022_11_41_08_new_roberta_1layer_100free/roberta_e0.pt"
+            ]
+        },
+        {
+            "name": "T5",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/t5.py",
+            "console": "integratedTerminal",
+            "args":[
+                "val", "same",
+                // "train", "roberta",
+                // "--is_debug",
+                // "--train_size","1000001",
+                // "--val_size","1000001",
+                // "--dropdiv","-1",
+                // // "eval", "roberta",
+                // // "--is_debug",
+                // // "--data_split", "dev",
+                // // "--weights", "/home/gamir/adiz/datasets/wl-ontonotes/2022.02.22_14.58/2022.02.22_17.39/roberta_e20_2022.02.22_19.57.pt" //roberta_e20_2022.02.22_19.57  //roberta_e18_2022.02.22_19.43
+                // "--weights", "/home/gamir/adiz/Code/runs/wl-coref/weights/03_18_2022_22_15_28_1000001_10001/checkpoint-34730"
+                "--weights", "/home/gamir/adiz/Code/runs/wl-coref/weights/03_18_2022_00_01_01_diff_1000000_10000/checkpoint-52085"
             ]
         }
+
     ]
 }
