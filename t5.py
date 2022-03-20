@@ -200,14 +200,15 @@ def main_eq_eval(valid_dataset, model, batch_size):
 def split_number(num):
   return ' '.join(list(str(num)))
 
-def create_question_template(terms, prefix='sum'):
+def create_question_template(terms, is_rev=False, prefix='sum'):
+  rev_num = -1 if is_rev else 1
   result = sum(terms)
-  text = f'{prefix}: {split_number(terms[0])}'
+  text = f'{prefix}: {split_number(terms[0])[::rev_num]}'
   for i in range(len(terms)-1):
-    text += f' + {split_number(terms[i+1])}'
-  return text, split_number(result)
+    text += f' + {split_number(terms[i+1])[::rev_num]}'
+  return text, split_number(result)[::rev_num]
 
-def create_data_dict(number_lens, num_samples, path, max_terms=7, is_eq=False):
+def create_data_dict(number_lens, num_samples, path, max_terms=7, is_eq=False, is_rev=False):
   all_data = []
   for i in range(num_samples):
     num_terms = random.randint(2, max_terms)
@@ -221,7 +222,7 @@ def create_data_dict(number_lens, num_samples, path, max_terms=7, is_eq=False):
         terms.append(0)
       else:
         terms.append(random.randint(10**(number_len-1), 10**number_len-1))
-    sample_q, sample_t = create_question_template(terms)
+    sample_q, sample_t = create_question_template(terms, is_rev)
 
     all_data.append({'input':sample_q, 'target':sample_t})
   write_data_file(path, all_data)
@@ -233,12 +234,12 @@ def write_data_file(path, batches):
       writer.write(json.dumps(batches[i]))
       writer.write('\n')
 
-def crate_data_pkls(train_len = 1e6, val_len = 1e4, max_terms=7, is_eq=False, # mode = 'diff', 
+def crate_data_pkls(train_len = 1e6, val_len = 1e4, max_terms=7, is_eq=False, is_rev=False, # mode = 'diff', 
                     max_digits=15, min_digits=1, train_different_number_lens=10, mode="train"):
-  train_path = f'{data_dir}/train/train_{train_len}_{val_len}_{min_digits}_{max_digits}_{max_terms}_{is_eq}.txt'
+  train_path = f'{data_dir}/train/train_{train_len}_{val_len}_{min_digits}_{max_digits}_{max_terms}_{is_eq}_{is_rev}.txt'
   # val_path = f'{data_dir}/train/train_{train_len}_{val_len}.txt'
-  val_s_path = f'{data_dir}/val/val_same_{train_len}_{val_len}_{min_digits}_{max_digits}_{max_terms}_{is_eq}.txt'
-  val_d_path = f'{data_dir}/val/val_diff_{train_len}_{val_len}_{min_digits}_{max_digits}_{max_terms}_{is_eq}.txt'
+  val_s_path = f'{data_dir}/val/val_same_{train_len}_{val_len}_{min_digits}_{max_digits}_{max_terms}_{is_eq}_{is_rev}.txt'
+  val_d_path = f'{data_dir}/val/val_diff_{train_len}_{val_len}_{min_digits}_{max_digits}_{max_terms}_{is_eq}_{is_rev}.txt'
   # val_path = f'{data_dir}/val/val_eqall_{train_len}_{val_len}.txt'
   t_train = t_s_val = t_d_val = None
   if (mode == '' or mode == 'train') and os.path.exists(train_path):
@@ -254,11 +255,11 @@ def crate_data_pkls(train_len = 1e6, val_len = 1e4, max_terms=7, is_eq=False, # 
     os.makedirs(f'{data_dir}/train', exist_ok=True)
     os.makedirs(f'{data_dir}/val', exist_ok=True)
     if mode == '' or mode == 'train':
-      t_train = tensor_data(create_data_dict(train_number_lens, int(train_len), train_path, max_terms, is_eq))
+      t_train = tensor_data(create_data_dict(train_number_lens, int(train_len), train_path, max_terms, is_eq, is_rev))
     if mode == '' or mode == 'same':
-      t_s_val = tensor_data(create_data_dict(train_number_lens, int(val_len), val_s_path, max_terms, is_eq))
+      t_s_val = tensor_data(create_data_dict(train_number_lens, int(val_len), val_s_path, max_terms, is_eq, is_rev))
     if mode == '' or mode == 'diff':
-      t_d_val = tensor_data(create_data_dict(different_val_digit_lens, int(val_len), val_d_path, max_terms, is_eq))
+      t_d_val = tensor_data(create_data_dict(different_val_digit_lens, int(val_len), val_d_path, max_terms, is_eq, is_rev))
   return t_train, t_s_val, t_d_val
 
 
@@ -374,6 +375,8 @@ if __name__ == "__main__":
     argparser.add_argument("--min_digits", type=int, default=1)
     argparser.add_argument("--batch_size", type=int, default=256)
     argparser.add_argument("--is_eq",  action="store_true")
+    argparser.add_argument("--is_rev",  action="store_true")
+    argparser.add_argument("--scratch",  action="store_true")
     argparser.add_argument("--train_different_number_lens", type=int, default=10)
     argparser.add_argument("--weights")
     args = argparser.parse_args()
@@ -383,7 +386,7 @@ if __name__ == "__main__":
     
     if args.tv_mode == 'val':
       print('loading data')
-      d1,d2,d3 = crate_data_pkls(args.train_size,args.val_size, mode=args.mode, max_terms=args.max_terms, \
+      d1,d2,d3 = crate_data_pkls(args.train_size,args.val_size, mode=args.mode, max_terms=args.max_terms, is_rev=args.is_rev, \
         max_digits=args.max_digits, min_digits=args.min_digits, train_different_number_lens=args.train_different_number_lens, is_eq=args.is_eq)
       print('loading done')
       if args.mode == 'train':
@@ -400,16 +403,18 @@ if __name__ == "__main__":
         main_eval(dataset, model, args.batch_size)
     else:
       print('loading data')
-      train_dataset, valid_same_dataset, valid_diff_dataset = crate_data_pkls(args.train_size,args.val_size, is_eq=args.is_eq, \
+      train_dataset, valid_same_dataset, valid_diff_dataset = crate_data_pkls(args.train_size,args.val_size, is_eq=args.is_eq, is_rev=args.is_rev, \
         max_terms=args.max_terms, max_digits=args.max_digits, min_digits=args.min_digits, train_different_number_lens=args.train_different_number_lens, mode="")
       print('loading done')
-      config = T5Config.from_pretrained('t5-base')
-      model = T5ForConditionalGeneration(config)
-      # model = T5ForConditionalGeneration.from_pretrained('t5-base', cache_dir='/home/gamir/adiz/Code/runs/wl-coref/cache_dir')
+      if args.scratch:
+        config = T5Config.from_pretrained('t5-base')
+        model = T5ForConditionalGeneration(config)
+      else:
+        model = T5ForConditionalGeneration.from_pretrained('t5-base', cache_dir='/home/gamir/adiz/Code/runs/wl-coref/cache_dir')
       # model_args = ModelArguments('t5-base', 't5-base')
       output_dir = '/home/gamir/adiz/Code/runs/wl-coref/weights/' + \
           datetime.datetime.now().strftime(f"%m_%d_%Y_%H_%M_%S")+'_'+\
-            f'{args.train_size}_{args.val_size}_{args.max_digits}_{args.max_terms}_{args.is_eq}'
+            f'{args.train_size}_{args.val_size}_{args.max_digits}_{args.max_terms}_{args.is_eq}_{args.is_rev}'
       print(output_dir)
       training_args = TrainingArguments(output_dir=output_dir, do_train=True, \
                                         do_eval=True, num_train_epochs=10, \

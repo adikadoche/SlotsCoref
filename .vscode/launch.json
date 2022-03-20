@@ -30,8 +30,9 @@
             "program": "${workspaceFolder}/t5.py",
             "console": "integratedTerminal",
             "args":[
-                "val", "--mode","same", "--min_digits","16", "--max_digits","20","--train_different_number_lens","5","--is_eq", "--max_terms", "2",
-                "--batch_size", "32",
+                "train", "--mode","same", "--min_digits","16", "--max_digits","20","--train_different_number_lens","5","--is_eq", "--max_terms", "2",
+                "--batch_size", "32", "--is_rev",
+                "--train_size", "1", "--val_size", "1", 
                 // "train", "roberta",
                 // "--is_debug",
                 // "--train_size","1000001",
@@ -42,7 +43,7 @@
                 // // "--data_split", "dev",
                 // // "--weights", "/home/gamir/adiz/datasets/wl-ontonotes/2022.02.22_14.58/2022.02.22_17.39/roberta_e20_2022.02.22_19.57.pt" //roberta_e20_2022.02.22_19.57  //roberta_e18_2022.02.22_19.43
                 // "--weights", "/home/gamir/adiz/Code/runs/wl-coref/weights/03_18_2022_22_15_28_1000001_10001/checkpoint-34730"
-                "--weights", "/home/gamir/adiz/Code/runs/wl-coref/weights/03_19_2022_15_01_07_100001_1001_15_2_True/checkpoint-20840/"
+                // "--weights", "/home/gamir/adiz/Code/runs/wl-coref/weights/03_19_2022_15_01_07_100001_1001_15_2_True/checkpoint-20840/"
             ]
         }
 
