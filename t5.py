@@ -8,7 +8,7 @@ import sys
 import torch
 import random
 import json
-from transformers import T5Tokenizer,T5ForConditionalGeneration
+from transformers import T5Config, T5Tokenizer,T5ForConditionalGeneration
 from torch.utils.data import Dataset
 import datetime
 import argparse
@@ -403,7 +403,9 @@ if __name__ == "__main__":
       train_dataset, valid_same_dataset, valid_diff_dataset = crate_data_pkls(args.train_size,args.val_size, is_eq=args.is_eq, \
         max_terms=args.max_terms, max_digits=args.max_digits, min_digits=args.min_digits, train_different_number_lens=args.train_different_number_lens, mode="")
       print('loading done')
-      model = T5ForConditionalGeneration.from_pretrained('t5-base', cache_dir='/home/gamir/adiz/Code/runs/wl-coref/cache_dir')
+      config = T5Config.from_pretrained('t5-base')
+      model = T5ForConditionalGeneration(config)
+      # model = T5ForConditionalGeneration.from_pretrained('t5-base', cache_dir='/home/gamir/adiz/Code/runs/wl-coref/cache_dir')
       # model_args = ModelArguments('t5-base', 't5-base')
       output_dir = '/home/gamir/adiz/Code/runs/wl-coref/weights/' + \
           datetime.datetime.now().strftime(f"%m_%d_%Y_%H_%M_%S")+'_'+\
@@ -414,7 +416,7 @@ if __name__ == "__main__":
                                       #   tpu_num_cores=4, \
                                         learning_rate=1e-4, \
                                         gradient_accumulation_steps=1, \
-                                        eval_accumulation_steps=1, per_device_train_batch_size=48,\
+                                        eval_accumulation_steps=1, per_device_train_batch_size=64,\
                                         per_device_eval_batch_size=1,
                                         save_strategy="epoch", save_total_limit=3)
       # if (
