@@ -103,11 +103,9 @@ def main_eval(valid_dataset, model, batch_size):
   model = model.to(device)
   for s in valid_dataset:
     for key in s.keys():
-      # s[key] = s[key].squeeze(0).to(device)
       s[key] = s[key].to(device)
   dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size)
 
-  # answers = []
   i=0
   f1 = exact_match = total = 0
   pbar = tqdm(dataloader, unit="batch", ncols=0)
@@ -128,9 +126,6 @@ def main_eval(valid_dataset, model, batch_size):
       f" f1: {100.0 * f1 / total:<.5f}"
       f" exact match: {100.0 * exact_match / total:<.5f}"
     )
-
-    # outs = [tokenizer.decode(ids, skip_special_tokens=True) for ids in outs]
-    # answers.extend(outs)
     i += len(outs)
     # break
   exact_match = 100.0 * exact_match / total
@@ -138,53 +133,69 @@ def main_eval(valid_dataset, model, batch_size):
 
   print({'exact_match': exact_match, 'f1': f1})
 
-  # predictions = []
-  # references = []
-  # for ref, pred in zip(valid_dataset, answers):
-  #   predictions.append(pred)
-  #   references.append(tokenizer.decode(ref['target_ids'], skip_special_tokens=True))
-  
-  # print(evaluate(references, predictions))
-
-def main_eq_eval(valid_dataset, path_load=None):
+def main_eq_eval(valid_dataset, model, batch_size):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-  if path_load is not None:
-    model = T5ForConditionalGeneration.from_pretrained(path_load, cache_dir='/home/gamir/adiz/Code/runs/wl-coref/cache_dir')
   model = model.to(device)
   for s in valid_dataset:
     for key in s.keys():
-      # s[key] = s[key].squeeze(0).to(device)
       s[key] = s[key].to(device)
-  dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=32)
+  dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size)
 
-  answers = []
-  lens = []
+  f1 = exact_match = total = 0
+  f1_d = {}
+  em_d = {}
+  tot_d = {}
   i = 0
-  for batch in tqdm(dataloader):
+  pbar = tqdm(dataloader, unit="batch", ncols=0)
+  for batch in pbar:
     outs = model.generate(input_ids=batch['input_ids'], 
                           attention_mask=batch['attention_mask'],
                           max_length=20,
                           early_stopping=True)
     outs = [tokenizer.decode(ids, skip_special_tokens=True) for ids in outs]
-    lens += [min(15,1+(i+j)// (len(valid_dataset)//15)) for j in range(batch['input_ids'].shape[0])]
-    i += batch['input_ids'].shape[0]
-    answers.extend(outs)
+    only_digits = [batch['input_ids'][j][(batch['input_ids'][j] == 1768) | (batch['input_ids'][j] == 1) | (batch['input_ids'][j] == 632) | \
+      (batch['input_ids'][j] == 209) | (batch['input_ids'][j] == 204) | (batch['input_ids'][j] == 220) | (batch['input_ids'][j] == 314) | \
+        (batch['input_ids'][j] == 305) | (batch['input_ids'][j] == 431) | (batch['input_ids'][j] == 489) | (batch['input_ids'][j] == 505) | \
+          (batch['input_ids'][j] == 668)] \
+      for j in range(batch['input_ids'].shape[0])]
+    inds = [torch.arange(only_digits[j].shape[0])[(only_digits[j] == 1768) | (only_digits[j] == 1)] for j in range(len(only_digits))]
+    lens = [(inds[j][-1]-inds[j][-2]-1).item() for j in range(len(inds))]
 
-  predictions = {}
-  references = {}
-  for l, ref, pred in zip(lens, valid_dataset, answers):
-    if l in predictions.keys():
-      predictions[l].append(pred)
-    else:
-      predictions[l] = [pred]
-    if l in references.keys():
-      references[l].append(tokenizer.decode(ref['target_ids'], skip_special_tokens=True))
-    else:
-      references[l] = [tokenizer.decode(ref['target_ids'], skip_special_tokens=True)]
-  
-  for l in predictions.keys():
-    print(l, len(predictions[l]))
-    print(evaluate(references[l], predictions[l]))
+    for j in range(len(outs)):
+      total += 1
+      ground_truths = tokenizer.decode(valid_dataset[i+j]['target_ids'], skip_special_tokens=True)
+      em = metric_max_over_ground_truths(
+              exact_match_score, outs[j], ground_truths)
+      f = metric_max_over_ground_truths(
+          f1_score, outs[j], ground_truths)
+      exact_match += em
+      f1 += f
+      if lens[j] in f1_d.keys():
+        f1_d[lens[j]] += f
+      else:
+        f1_d[lens[j]] = f
+      if lens[j] in em_d.keys():
+        em_d[lens[j]] += em
+      else:
+        em_d[lens[j]] = em
+      if lens[j] in tot_d.keys():
+        tot_d[lens[j]] += 1
+      else:
+        tot_d[lens[j]] = 1
+      
+    desc =  f" f1: {100.0 * f1 / total:<.5f}, exact match: {100.0 * exact_match / total:<.5f}, total: {total} ||"
+    for l in sorted(em_d.keys()):
+      desc += f" {l}, {tot_d[l]}: f1: {100.0 * f1_d[l] / tot_d[l]:<.5f}, exact match: {100.0 * em_d[l] / tot_d[l]:<.5f} ||"
+
+    pbar.set_description(desc)
+
+    i += batch['input_ids'].shape[0]
+
+  desc =  f" f1: {100.0 * f1 / total:<.5f}, exact match: {100.0 * exact_match / total:<.5f}, total: {total} ||"
+  for l in sorted(em_d.keys()):
+    desc += f" {l}, {tot_d[l]}: f1: {100.0 * f1_d[l] / tot_d[l]:<.5f}, exact match: {100.0 * em_d[l] / tot_d[l]:<.5f} ||"
+
+  print(desc)
 
 def split_number(num):
   return ' '.join(list(str(num)))
@@ -223,33 +234,32 @@ def write_data_file(path, batches):
       writer.write('\n')
 
 def crate_data_pkls(train_len = 1e6, val_len = 1e4, max_terms=7, is_eq=False, # mode = 'diff', 
-                    max_digits=15, train_different_number_lens=10, mode="train"):
-  train_path = f'{data_dir}/train/train_{train_len}_{val_len}_{max_digits}_{max_terms}_{is_eq}.txt'
+                    max_digits=15, min_digits=1, train_different_number_lens=10, mode="train"):
+  train_path = f'{data_dir}/train/train_{train_len}_{val_len}_{min_digits}_{max_digits}_{max_terms}_{is_eq}.txt'
   # val_path = f'{data_dir}/train/train_{train_len}_{val_len}.txt'
-  val_s_path = f'{data_dir}/val/val_same_{train_len}_{val_len}_{max_digits}_{max_terms}_{is_eq}.txt'
-  val_d_path = f'{data_dir}/val/val_diff_{train_len}_{val_len}_{max_digits}_{max_terms}_{is_eq}.txt'
+  val_s_path = f'{data_dir}/val/val_same_{train_len}_{val_len}_{min_digits}_{max_digits}_{max_terms}_{is_eq}.txt'
+  val_d_path = f'{data_dir}/val/val_diff_{train_len}_{val_len}_{min_digits}_{max_digits}_{max_terms}_{is_eq}.txt'
   # val_path = f'{data_dir}/val/val_eqall_{train_len}_{val_len}.txt'
-  if os.path.exists(train_path) and os.path.exists(val_s_path) and os.path.exists(val_d_path):
-    if mode == "train":
-      return tensor_data(read_data_file(train_path))
-    elif mode == "same":
-      return tensor_data(read_data_file(val_s_path))
-    elif mode == "diff":
-      return tensor_data(read_data_file(val_d_path))
-    else:
-      train_dict = read_data_file(train_path)
-      val_s_dict = read_data_file(val_s_path)
-      val_d_dict = read_data_file(val_d_path)
-  else:
-    train_number_lens = random.sample(list(range(1,max_digits+1)), k=train_different_number_lens)
+  t_train = t_s_val = t_d_val = None
+  if (mode == '' or mode == 'train') and os.path.exists(train_path):
+    t_train = tensor_data(read_data_file(train_path))
+  if (mode == '' or mode == 'same') and os.path.exists(val_s_path):
+    t_s_val = tensor_data(read_data_file(val_s_path))
+  if (mode == '' or mode == 'diff') and os.path.exists(val_d_path):
+    t_d_val = tensor_data(read_data_file(val_d_path))
+  if not (os.path.exists(train_path) and os.path.exists(val_s_path) and os.path.exists(val_d_path)):
+    train_number_lens = random.sample(list(range(min_digits,max_digits+1)), k=train_different_number_lens)
     different_val_digit_lens = [i for i in range(max_digits+1) if i not in train_number_lens]
     # val_number_lens = train_number_lens if mode=='same' else different_val_digit_lens
     os.makedirs(f'{data_dir}/train', exist_ok=True)
     os.makedirs(f'{data_dir}/val', exist_ok=True)
-    train_dict = create_data_dict(train_number_lens, int(train_len), train_path, max_terms, is_eq)
-    val_s_dict = create_data_dict(train_number_lens, int(val_len), val_s_path, max_terms, is_eq)
-    val_d_dict = create_data_dict(different_val_digit_lens, int(val_len), val_d_path, max_terms, is_eq)
-  return tensor_data(train_dict), tensor_data(val_s_dict), tensor_data(val_d_dict)
+    if mode == '' or mode == 'train':
+      t_train = tensor_data(create_data_dict(train_number_lens, int(train_len), train_path, max_terms, is_eq))
+    if mode == '' or mode == 'same':
+      t_s_val = tensor_data(create_data_dict(train_number_lens, int(val_len), val_s_path, max_terms, is_eq))
+    if mode == '' or mode == 'diff':
+      t_d_val = tensor_data(create_data_dict(different_val_digit_lens, int(val_len), val_d_path, max_terms, is_eq))
+  return t_train, t_s_val, t_d_val
 
 
 def read_data_file(path):
@@ -361,32 +371,43 @@ if __name__ == "__main__":
     argparser.add_argument("--val_size", type=int, default=10000)
     argparser.add_argument("--max_terms", type=int, default=7)
     argparser.add_argument("--max_digits", type=int, default=15)
+    argparser.add_argument("--min_digits", type=int, default=1)
     argparser.add_argument("--batch_size", type=int, default=256)
     argparser.add_argument("--is_eq",  action="store_true")
     argparser.add_argument("--train_different_number_lens", type=int, default=10)
     argparser.add_argument("--weights")
     args = argparser.parse_args()
 
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     # Get datasets
     
     if args.tv_mode == 'val':
       print('loading data')
-      dataset = crate_data_pkls(args.train_size,args.val_size, mode=args.mode, max_terms=args.max_terms, \
-        max_digits=args.max_digis, train_different_number_lens=args.train_different_number_lens, is_eq=args.is_eq)
+      d1,d2,d3 = crate_data_pkls(args.train_size,args.val_size, mode=args.mode, max_terms=args.max_terms, \
+        max_digits=args.max_digits, min_digits=args.min_digits, train_different_number_lens=args.train_different_number_lens, is_eq=args.is_eq)
       print('loading done')
+      if args.mode == 'train':
+        dataset = d1
+      elif args.mode == 'same':
+        dataset = d2
+      else:
+        dataset = d3
       print(f"******Eval {args.mode}*******")
       model = T5ForConditionalGeneration.from_pretrained(args.weights, cache_dir='/home/gamir/adiz/Code/runs/wl-coref/cache_dir')
-      main_eval(dataset, model, args.batch_size)
+      if args.is_eq:
+        main_eq_eval(dataset, model, args.batch_size)
+      else:
+        main_eval(dataset, model, args.batch_size)
     else:
       print('loading data')
       train_dataset, valid_same_dataset, valid_diff_dataset = crate_data_pkls(args.train_size,args.val_size, is_eq=args.is_eq, \
-        max_terms=args.max_terms, max_digits=args.max_digits, train_different_number_lens=args.train_different_number_lens, mode="")
+        max_terms=args.max_terms, max_digits=args.max_digits, min_digits=args.min_digits, train_different_number_lens=args.train_different_number_lens, mode="")
       print('loading done')
       model = T5ForConditionalGeneration.from_pretrained('t5-base', cache_dir='/home/gamir/adiz/Code/runs/wl-coref/cache_dir')
       # model_args = ModelArguments('t5-base', 't5-base')
       output_dir = '/home/gamir/adiz/Code/runs/wl-coref/weights/' + \
-          datetime.datetime.now().strftime(f"%m_%d_%Y_%H_%M_%S")+'_'+f'{args.train_size}_{args.val_size}'
+          datetime.datetime.now().strftime(f"%m_%d_%Y_%H_%M_%S")+'_'+\
+            f'{args.train_size}_{args.val_size}_{args.max_digits}_{args.max_terms}_{args.is_eq}'
       print(output_dir)
       training_args = TrainingArguments(output_dir=output_dir, do_train=True, \
                                         do_eval=True, num_train_epochs=10, \
@@ -464,11 +485,21 @@ if __name__ == "__main__":
       #     results.update(eval_output)
       
       print("******Eval Same*******")
+      if args.is_eq:
+        main_eq_eval(valid_same_dataset, model, args.batch_size)
+      else:
+        main_eval(valid_same_dataset, model, args.batch_size)
       main_eval(valid_same_dataset, model, args.batch_size)
       print("******Eval Diff*******")
-      main_eval(valid_diff_dataset, model, args.batch_size)
+      if args.is_eq:
+        main_eq_eval(valid_diff_dataset, model, args.batch_size)
+      else:
+        main_eval(valid_diff_dataset, model, args.batch_size)
       print("******Train*******")
-      main_eval(train_dataset, model, args.batch_size)
+      if args.is_eq:
+        main_eq_eval(train_dataset, model, args.batch_size)
+      else:
+        main_eval(train_dataset, model, args.batch_size)
     # return results
 
 # main('diff', '1000000', '10000')
