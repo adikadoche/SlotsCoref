@@ -4,7 +4,7 @@ import string
 import re
 import argparse
 import json
-import sys
+import math
 import torch
 import random
 import json
@@ -84,24 +84,27 @@ def exact_match_score(prediction, ground_truth):
     return (normalize_answer(prediction) == normalize_answer(ground_truth))
 
 
+def diff_score(prediction, ground_truth):
+    return abs(int(''.join(prediction.split(' '))) - int(''.join(ground_truth.split(' '))))
+
 def metric_max_over_ground_truths(metric_fn, prediction, ground_truth):
     return metric_fn(prediction, ground_truth)
 
 
-def evaluate(gold_answers, predictions):
-    f1 = exact_match = total = 0
+# def evaluate(gold_answers, predictions):
+#     f1 = exact_match = total = 0
 
-    for ground_truths, prediction in zip(gold_answers, predictions):
-      total += 1
-      exact_match += metric_max_over_ground_truths(
-                    exact_match_score, prediction, ground_truths)
-      f1 += metric_max_over_ground_truths(
-          f1_score, prediction, ground_truths)
+#     for ground_truths, prediction in zip(gold_answers, predictions):
+#       total += 1
+#       exact_match += metric_max_over_ground_truths(
+#                     exact_match_score, prediction, ground_truths)
+#       f1 += metric_max_over_ground_truths(
+#           f1_score, prediction, ground_truths)
     
-    exact_match = 100.0 * exact_match / total
-    f1 = f1 / total
+#     exact_match = 100.0 * exact_match / total
+#     f1 = f1 / total
 
-    return {'exact_match': exact_match, 'f1': f1}
+#     return {'exact_match': exact_match, 'f1': f1}
 
 def main_eval(valid_dataset, model, batch_size):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -112,7 +115,7 @@ def main_eval(valid_dataset, model, batch_size):
   dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size)
 
   i=0
-  f1 = exact_match = total = 0
+  f1 = exact_match = diff = total = 0
   pbar = tqdm(dataloader, unit="batch", ncols=0)
   for batch in pbar:
     outs = model.generate(input_ids=batch['input_ids'], 
@@ -127,16 +130,20 @@ def main_eval(valid_dataset, model, batch_size):
               exact_match_score, prediction, ground_truths)
       f1 += metric_max_over_ground_truths(
           f1_score, prediction, ground_truths)
+      diff += metric_max_over_ground_truths(
+          diff_score, prediction, ground_truths)
     pbar.set_description(
       f" f1: {f1 / total:<.5f}"
+      f" diff: {diff / total:<.5f}"
       f" exact match: {100.0 * exact_match / total:<.5f}"
     )
     i += len(outs)
     # break
   exact_match = 100.0 * exact_match / total
   f1 = f1 / total
+  diff = diff / total
 
-  print({'exact_match': exact_match, 'f1': f1})
+  print({'f1': f1, 'diff': diff, 'exact_match': exact_match})
 
 def main_eq_eval(valid_dataset, model, batch_size):
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -146,9 +153,10 @@ def main_eq_eval(valid_dataset, model, batch_size):
       s[key] = s[key].to(device)
   dataloader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size)
 
-  f1 = exact_match = total = 0
+  f1 = exact_match = diff = total = 0
   f1_d = {}
   em_d = {}
+  diff_d = {}
   tot_d = {}
   i = 0
   pbar = tqdm(dataloader, unit="batch", ncols=0)
@@ -167,38 +175,43 @@ def main_eq_eval(valid_dataset, model, batch_size):
     lens = [(inds[j][-1]-inds[j][-2]-1).item() for j in range(len(inds))]
 
     for j in range(len(outs)):
+      print('\n'.join(tokenizer.decode(valid_dataset[i+j]['input_ids'], skip_special_tokens=True).replace('+','+    ').split('+')))
       total += 1
       ground_truths = tokenizer.decode(valid_dataset[i+j]['target_ids'], skip_special_tokens=True)
+      print(f'GT:  {ground_truths}')
+      print(f'Pr.: {outs[j]}')
+      print("---------")
       em = metric_max_over_ground_truths(
               exact_match_score, outs[j], ground_truths)
       f = metric_max_over_ground_truths(
           f1_score, outs[j], ground_truths)
+      d = metric_max_over_ground_truths(
+          diff_score, outs[j], ground_truths)
       exact_match += em
       f1 += f
+      diff += d
       if lens[j] in f1_d.keys():
         f1_d[lens[j]] += f
+        em_d[lens[j]] += em
+        tot_d[lens[j]] += 1
+        diff_d[lens[j]] += d
       else:
         f1_d[lens[j]] = f
-      if lens[j] in em_d.keys():
-        em_d[lens[j]] += em
-      else:
         em_d[lens[j]] = em
-      if lens[j] in tot_d.keys():
-        tot_d[lens[j]] += 1
-      else:
         tot_d[lens[j]] = 1
+        diff_d[lens[j]] = d
       
-    desc =  f" f1: {f1 / total:<.5f}, exact match: {100.0 * exact_match / total:<.5f}, total: {total} ||"
+    desc =  f" f1: {f1 / total:<.5f}, exact match: {100.0 * exact_match / total:<.5f}, diff: {diff / total:<.5f}, total: {total} ||"
     for l in sorted(em_d.keys()):
-      desc += f" {l}, {tot_d[l]}: f1: {f1_d[l] / tot_d[l]:<.5f}, exact match: {100.0 * em_d[l] / tot_d[l]:<.5f} ||"
+      desc += f" {l}, {tot_d[l]}: f1: {f1_d[l] / tot_d[l]:<.5f}, exact match: {100.0 * em_d[l] / tot_d[l]:<.5f}, diff: {diff_d[l] / tot_d[l]:<.5f} ||"
 
     pbar.set_description(desc)
 
     i += batch['input_ids'].shape[0]
 
-  desc =  f" f1: {f1 / total:<.5f}, exact match: {100.0 * exact_match / total:<.5f}, total: {total} ||"
+  desc =  f" f1: {f1 / total:<.5f}, exact match: {100.0 * exact_match / total:<.5f}, diff: {diff / total:<.5f}, total: {total} ||"
   for l in sorted(em_d.keys()):
-    desc += f" {l}, {tot_d[l]}: f1: {f1_d[l] / tot_d[l]:<.5f}, exact match: {100.0 * em_d[l] / tot_d[l]:<.5f} ||"
+    desc += f" {l}, {tot_d[l]}: f1: {f1_d[l] / tot_d[l]:<.5f}, exact match: {100.0 * em_d[l] / tot_d[l]:<.5f}, diff: {diff_d[l] / tot_d[l]:<.5f} ||"
 
   print(desc)
 
@@ -379,6 +392,7 @@ if __name__ == "__main__":
     argparser.add_argument("--max_digits", type=int, default=15)
     argparser.add_argument("--min_digits", type=int, default=1)
     argparser.add_argument("--batch_size", type=int, default=256)
+    argparser.add_argument("--epochs", type=int, default=10)
     argparser.add_argument("--is_eq",  action="store_true")
     argparser.add_argument("--is_rev",  action="store_true")
     argparser.add_argument("--scratch",  action="store_true")
@@ -430,7 +444,7 @@ if __name__ == "__main__":
             f'{args.train_size}_{args.val_size}_{args.max_digits}_{args.max_terms}_{args.is_eq}_{args.is_rev}'
       print(output_dir)
       training_args = TrainingArguments(output_dir=output_dir, do_train=True, \
-                                        do_eval=True, num_train_epochs=10, \
+                                        do_eval=True, num_train_epochs=args.epochs, \
                                       #   tpu_num_cores=4, \
                                         learning_rate=1e-4, \
                                         gradient_accumulation_steps=1, \
