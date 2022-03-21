@@ -384,6 +384,7 @@ if __name__ == "__main__":
     argparser.add_argument("--scratch",  action="store_true")
     argparser.add_argument("--train_different_number_lens", type=int, default=10)
     argparser.add_argument("--weights")
+    argparser.add_argument("--is_debug", action="store_true", help="Whether to run profiling.")
     args = argparser.parse_args()
     if "JOB_NAME" in os.environ:
         args.run_name = os.environ["JOB_NAME"]
@@ -392,7 +393,8 @@ if __name__ == "__main__":
 
     print(args)
 
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    if args.is_debug:
+      os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     # Get datasets
     
     if args.tv_mode == 'val':
