@@ -15,7 +15,7 @@ import argparse
 import torch
 # import torch_xla
 # import torch_xla.core.xla_model as xm
-
+import jellyfish
 # import nlp
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 
@@ -63,15 +63,20 @@ def normalize_answer(s):
 
 
 def f1_score(prediction, ground_truth):
-    prediction_tokens = normalize_answer(prediction).split()
-    ground_truth_tokens = normalize_answer(ground_truth).split()
-    common = Counter(prediction_tokens) & Counter(ground_truth_tokens)
-    num_same = sum(common.values())
-    if num_same == 0:
-        return 0
-    precision = 1.0 * num_same / len(prediction_tokens)
-    recall = 1.0 * num_same / len(ground_truth_tokens)
-    f1 = (2 * precision * recall) / (precision + recall)
+    # prediction_tokens = normalize_answer(prediction).split()
+    # ground_truth_tokens = normalize_answer(ground_truth).split()
+    # common = Counter(prediction_tokens) & Counter(ground_truth_tokens)
+    # num_same = sum(common.values())
+    # if num_same == 0:
+    #     return 0
+    # precision = 1.0 * num_same / len(prediction_tokens)
+    # recall = 1.0 * num_same / len(ground_truth_tokens)
+    # f1 = (2 * precision * recall) / (precision + recall)
+
+    # print(ground_truth)
+    # print(prediction)
+    # print(f1)
+    f1 = jellyfish.levenshtein_distance(prediction, ground_truth) / 2
     return f1
 
 
@@ -94,7 +99,7 @@ def evaluate(gold_answers, predictions):
           f1_score, prediction, ground_truths)
     
     exact_match = 100.0 * exact_match / total
-    f1 = 100.0 * f1 / total
+    f1 = f1 / total
 
     return {'exact_match': exact_match, 'f1': f1}
 
@@ -112,7 +117,7 @@ def main_eval(valid_dataset, model, batch_size):
   for batch in pbar:
     outs = model.generate(input_ids=batch['input_ids'], 
                           attention_mask=batch['attention_mask'],
-                          max_length=20,
+                          max_length=64,
                           early_stopping=True)
     for j in range(len(outs)):
       total += 1
@@ -123,13 +128,13 @@ def main_eval(valid_dataset, model, batch_size):
       f1 += metric_max_over_ground_truths(
           f1_score, prediction, ground_truths)
     pbar.set_description(
-      f" f1: {100.0 * f1 / total:<.5f}"
+      f" f1: {f1 / total:<.5f}"
       f" exact match: {100.0 * exact_match / total:<.5f}"
     )
     i += len(outs)
     # break
   exact_match = 100.0 * exact_match / total
-  f1 = 100.0 * f1 / total
+  f1 = f1 / total
 
   print({'exact_match': exact_match, 'f1': f1})
 
@@ -150,7 +155,7 @@ def main_eq_eval(valid_dataset, model, batch_size):
   for batch in pbar:
     outs = model.generate(input_ids=batch['input_ids'], 
                           attention_mask=batch['attention_mask'],
-                          max_length=20,
+                          max_length=64,
                           early_stopping=True)
     outs = [tokenizer.decode(ids, skip_special_tokens=True) for ids in outs]
     only_digits = [batch['input_ids'][j][(batch['input_ids'][j] == 1768) | (batch['input_ids'][j] == 1) | (batch['input_ids'][j] == 632) | \
@@ -183,17 +188,17 @@ def main_eq_eval(valid_dataset, model, batch_size):
       else:
         tot_d[lens[j]] = 1
       
-    desc =  f" f1: {100.0 * f1 / total:<.5f}, exact match: {100.0 * exact_match / total:<.5f}, total: {total} ||"
+    desc =  f" f1: {f1 / total:<.5f}, exact match: {100.0 * exact_match / total:<.5f}, total: {total} ||"
     for l in sorted(em_d.keys()):
-      desc += f" {l}, {tot_d[l]}: f1: {100.0 * f1_d[l] / tot_d[l]:<.5f}, exact match: {100.0 * em_d[l] / tot_d[l]:<.5f} ||"
+      desc += f" {l}, {tot_d[l]}: f1: {f1_d[l] / tot_d[l]:<.5f}, exact match: {100.0 * em_d[l] / tot_d[l]:<.5f} ||"
 
     pbar.set_description(desc)
 
     i += batch['input_ids'].shape[0]
 
-  desc =  f" f1: {100.0 * f1 / total:<.5f}, exact match: {100.0 * exact_match / total:<.5f}, total: {total} ||"
+  desc =  f" f1: {f1 / total:<.5f}, exact match: {100.0 * exact_match / total:<.5f}, total: {total} ||"
   for l in sorted(em_d.keys()):
-    desc += f" {l}, {tot_d[l]}: f1: {100.0 * f1_d[l] / tot_d[l]:<.5f}, exact match: {100.0 * em_d[l] / tot_d[l]:<.5f} ||"
+    desc += f" {l}, {tot_d[l]}: f1: {f1_d[l] / tot_d[l]:<.5f}, exact match: {100.0 * em_d[l] / tot_d[l]:<.5f} ||"
 
   print(desc)
 
@@ -277,7 +282,7 @@ class mathDataset(Dataset):
       tok_input = tokenizer(sample['input'], return_tensors='pt', \
                             pad_to_max_length=True, max_length=512)
       tok_target = tokenizer(sample['target'], return_tensors='pt', \
-                             pad_to_max_length=True, max_length=20)
+                             pad_to_max_length=True, max_length=64)
       self.data[i] = {'input_ids':tok_input['input_ids'].squeeze(0),\
                  'target_ids':tok_target['input_ids'].squeeze(0),\
                  'attention_mask':tok_input['attention_mask'].squeeze(0),\
@@ -293,7 +298,7 @@ def tensor_data(data):
       tok_input = tokenizer(sample['input'], return_tensors='pt', \
                             pad_to_max_length=True, max_length=512, truncation=True)
       tok_target = tokenizer(sample['target'], return_tensors='pt', \
-                             pad_to_max_length=True, max_length=20, truncation=True)
+                             pad_to_max_length=True, max_length=64, truncation=True)
       data[i] = {'input_ids':tok_input['input_ids'].squeeze(0),\
                  'target_ids':tok_target['input_ids'].squeeze(0),\
                  'attention_mask':tok_input['attention_mask'].squeeze(0),\
@@ -380,8 +385,14 @@ if __name__ == "__main__":
     argparser.add_argument("--train_different_number_lens", type=int, default=10)
     argparser.add_argument("--weights")
     args = argparser.parse_args()
+    if "JOB_NAME" in os.environ:
+        args.run_name = os.environ["JOB_NAME"]
+    else:
+        args.run_name = 'vscode'
 
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    print(args)
+
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     # Get datasets
     
     if args.tv_mode == 'val':
@@ -412,7 +423,7 @@ if __name__ == "__main__":
       else:
         model = T5ForConditionalGeneration.from_pretrained('t5-base', cache_dir='/home/gamir/adiz/Code/runs/wl-coref/cache_dir')
       # model_args = ModelArguments('t5-base', 't5-base')
-      output_dir = '/home/gamir/adiz/Code/runs/wl-coref/weights/' + \
+      output_dir = f'/home/gamir/adiz/Code/runs/wl-coref/weights/{args.run_name}_' + \
           datetime.datetime.now().strftime(f"%m_%d_%Y_%H_%M_%S")+'_'+\
             f'{args.train_size}_{args.val_size}_{args.max_digits}_{args.max_terms}_{args.is_eq}_{args.is_rev}'
       print(output_dir)
@@ -496,7 +507,6 @@ if __name__ == "__main__":
         main_eq_eval(valid_same_dataset, model, args.batch_size)
       else:
         main_eval(valid_same_dataset, model, args.batch_size)
-      main_eval(valid_same_dataset, model, args.batch_size)
       print("******Eval Diff*******")
       if args.is_eq:
         main_eq_eval(valid_diff_dataset, model, args.batch_size)
