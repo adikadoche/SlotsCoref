@@ -486,7 +486,7 @@ if __name__ == "__main__":
     config.output_dir = os.path.join(config.output_dir, \
         datetime.datetime.now().strftime(f"%m_%d_%Y_%H_%M_%S")+'_'+args.run_name)
     model = CorefModel(args, config)
-    coref_criterion = MatchingLoss(args.freetokens)
+    coref_criterion = MatchingLoss(args.num_queries)
     span_criterion = torch.nn.CrossEntropyLoss(reduction="sum")
     
     train_docs = list(_get_docs(config.train_file, model))

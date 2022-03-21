@@ -72,7 +72,7 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         self.epochs_trained = epochs_trained
         self._docs: Dict[str, List[Doc]] = {}
         self.bert, self.tokenizer = bert.load_bert(self.config, self.device)
-        self.tokens_embed = torch.nn.Embedding(self.args.freetokens, self.bert.config.hidden_size).to(self.device)
+        self.tokens_embed = torch.nn.Embedding(self.args.num_queries+self.args.num_junk_queries, self.bert.config.hidden_size).to(self.device)
         self.pw = PairwiseEncoder(self.config).to(self.device)
 
         bert_emb = self.bert.config.hidden_size
@@ -248,9 +248,9 @@ class CorefModel(torch.nn.Module):  # pylint: disable=too-many-instance-attribut
         # [n_subwords, bert_emb]
         return (out[subword_mask_tensor], cls_token, free_tokens)
 
-    def _clusterize_slots(self, coref_logits, top_indices, threshold=0.05):
-        max_values, max_inds = torch.max(coref_logits[:,1:], dim=0)
-        clustered_mentions_bool = max_values > threshold
+    def _clusterize_slots(self, coref_logits, top_indices, threshold=0.1):
+        max_values, max_inds = torch.max(coref_logits, dim=0)
+        clustered_mentions_bool = (max_values > threshold) & (max_inds < self.args.num_queries)
         true_coref_indices = top_indices[np.where(clustered_mentions_bool.numpy())[0]] #indices of the gold mention that their clusters pass threshold
         max_coref_cluster_ind_filtered = max_inds[clustered_mentions_bool] #index of the best clusters per gold mention, if it passes the threshold
 

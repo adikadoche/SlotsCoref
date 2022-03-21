@@ -63,9 +63,13 @@ class AnaphoricityScorer(torch.nn.Module):
         super().__init__()
         # self.not_cluster = torch.nn.Embedding(1, in_features)
         # self.is_choose = torch.nn.Embedding(1, in_features)
-        self_attn_layer = SelfAttention(in_features, config.dropout_rate)
+        if args.dropdiv > 0:
+            dropout_rate = config.dropout_rate/args.dropdiv
+        else:
+            dropout_rate = 0
+        self_attn_layer = SelfAttention(in_features, dropout_rate)
         self.layers = _get_clones(self_attn_layer, args.layernum)
-        self.dropout = torch.nn.Dropout(config.dropout_rate/args.dropdiv)
+        self.dropout = torch.nn.Dropout(dropout_rate)
         # self.relu = torch.nn.ReLU(inplace=False)
         # self.layers_weights = torch.nn.Linear(len(self.layers), 1)
         # self.is_choose_classifier = torch.nn.Linear(in_features*2, 1)
@@ -154,7 +158,7 @@ class AnaphoricityScorer(torch.nn.Module):
 
         # return torch.cat([(cls_scores/len(self.layers)).transpose(0,1), attn_weights], dim=-1) + final_mask[1:,:]
         if free_tokens.shape[0] > 0:
-            return self.dropout(attn_weights[-free_tokens.shape[0]:,:-free_tokens.shape[0]].softmax(0))# + final_mask[1:]
+            return self.dropout(attn_weights[-free_tokens.shape[0]:,1:-free_tokens.shape[0]].softmax(0))# + final_mask[1:]
         else:
             return self.dropout(attn_weights[1:])# + final_mask[1:]
 
