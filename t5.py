@@ -226,6 +226,12 @@ def create_question_template(terms, is_rev=False, prefix='sum'):
     text += f' + {split_number(terms[i+1])[::rev_num]}'
   return text, split_number(result)[::rev_num]
 
+def create_binary_question_template(term, result, is_rev=False, prefix='count'):
+  rev_num = -1 if is_rev else 1
+  term = ''.join(term)
+  text = f'{prefix}: {split_number(term)[::rev_num]}'
+  return text, split_number(result)[::rev_num]
+
 def create_data_dict(number_lens, num_samples, path, max_terms=7, is_eq=False, is_rev=False):
   all_data = []
   for i in range(num_samples):
@@ -241,6 +247,19 @@ def create_data_dict(number_lens, num_samples, path, max_terms=7, is_eq=False, i
       else:
         terms.append(random.randint(10**(number_len-1), 10**number_len-1))
     sample_q, sample_t = create_question_template(terms, is_rev)
+
+    all_data.append({'input':sample_q, 'target':sample_t})
+  write_data_file(path, all_data)
+  return all_data
+
+def create_binary_data_dict(number_lens, num_samples, path, max_terms=10, is_eq=True, is_rev=False):
+  #max terms is the sequence length here
+  all_data = []
+  for i in range(num_samples):
+    num_ones = random.choice(number_lens)
+    term = (['1'] * num_ones) + (['0'] * (max_terms-num_ones))
+    random.shuffle(term)
+    sample_q, sample_t = create_binary_question_template(term, str(num_ones), is_rev)
 
     all_data.append({'input':sample_q, 'target':sample_t})
   write_data_file(path, all_data)
@@ -381,17 +400,29 @@ class DataTrainingArguments:
         metadata={"help": "Max input length for the target text"},
     )
 
+class SparseTrainer(Trainer):
+    def compute_loss(self, model, inputs):
+        # labels = inputs["labels"]
+        outputs = model(input_ids=inputs['input_ids'], attention_mask = inputs['attention_mask'], \
+          labels=inputs["labels"], output_attentions=True, return_dict=True)
+        sum_attn = sum(outputs['encoder_attentions'])
+        sum_attn = torch.sum(sum_attn, [0,1])
+        num_input_tok = torch.sum(inputs['attention_mask'])
+        sum_attn = sum_attn[:num_input_tok, :num_input_tok]
+        return outputs['loss'] + \
+          0.2 * torch.mean(sum_attn * (1-torch.eye(sum_attn.shape[0], device=sum_attn.device)))
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("tv_mode", choices=("train", "val"))
     argparser.add_argument("--mode", choices=("diff", "same", "train"))
-    argparser.add_argument("--train_size", type=int, default=1000000)
-    argparser.add_argument("--val_size", type=int, default=10000)
+    argparser.add_argument("--train_size", type=int, default=100000)
+    argparser.add_argument("--val_size", type=int, default=1000)
     argparser.add_argument("--max_terms", type=int, default=7)
     argparser.add_argument("--max_digits", type=int, default=15)
     argparser.add_argument("--min_digits", type=int, default=1)
-    argparser.add_argument("--batch_size", type=int, default=256)
+    argparser.add_argument("--ev_batch_size", type=int, default=256)
+    argparser.add_argument("--tr_batch_size", type=int, default=64)
     argparser.add_argument("--epochs", type=int, default=10)
     argparser.add_argument("--is_eq",  action="store_true")
     argparser.add_argument("--is_rev",  action="store_true")
@@ -408,7 +439,7 @@ if __name__ == "__main__":
     print(args)
 
     if args.is_debug:
-      os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+      os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     # Get datasets
     
     if args.tv_mode == 'val':
@@ -425,9 +456,9 @@ if __name__ == "__main__":
       print(f"******Eval {args.mode}*******")
       model = T5ForConditionalGeneration.from_pretrained(args.weights, cache_dir='/home/gamir/adiz/Code/runs/wl-coref/cache_dir')
       if args.is_eq:
-        main_eq_eval(dataset, model, args.batch_size)
+        main_eq_eval(dataset, model, args.ev_batch_size)
       else:
-        main_eval(dataset, model, args.batch_size)
+        main_eval(dataset, model, args.ev_batch_size)
     else:
       print('loading data')
       train_dataset, valid_same_dataset, valid_diff_dataset = crate_data_pkls(args.train_size,args.val_size, is_eq=args.is_eq, is_rev=args.is_rev, \
@@ -448,7 +479,7 @@ if __name__ == "__main__":
                                       #   tpu_num_cores=4, \
                                         learning_rate=1e-4, \
                                         gradient_accumulation_steps=1, \
-                                        eval_accumulation_steps=1, per_device_train_batch_size=64,\
+                                        eval_accumulation_steps=1, per_device_train_batch_size=args.tr_batch_size,\
                                         per_device_eval_batch_size=1,
                                         save_strategy="epoch", save_total_limit=3)
       # if (
@@ -483,7 +514,7 @@ if __name__ == "__main__":
 
 
       # Initialize our Trainer
-      trainer = Trainer(
+      trainer = SparseTrainer(
           model=model,
           args=training_args,
           train_dataset=train_dataset,
@@ -520,19 +551,19 @@ if __name__ == "__main__":
       
       print("******Eval Same*******")
       if args.is_eq:
-        main_eq_eval(valid_same_dataset, model, args.batch_size)
+        main_eq_eval(valid_same_dataset, model, args.ev_batch_size)
       else:
-        main_eval(valid_same_dataset, model, args.batch_size)
+        main_eval(valid_same_dataset, model, args.ev_batch_size)
       print("******Eval Diff*******")
       if args.is_eq:
-        main_eq_eval(valid_diff_dataset, model, args.batch_size)
+        main_eq_eval(valid_diff_dataset, model, args.ev_batch_size)
       else:
-        main_eval(valid_diff_dataset, model, args.batch_size)
+        main_eval(valid_diff_dataset, model, args.ev_batch_size)
       print("******Train*******")
       if args.is_eq:
-        main_eq_eval(train_dataset, model, args.batch_size)
+        main_eq_eval(train_dataset, model, args.ev_batch_size)
       else:
-        main_eval(train_dataset, model, args.batch_size)
+        main_eval(train_dataset, model, args.ev_batch_size)
     # return results
 
 # main('diff', '1000000', '10000')
